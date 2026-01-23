@@ -1,0 +1,3 @@
+"""
+Unified API response formatting.
+"""
