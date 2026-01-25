@@ -1,16 +1,129 @@
-# React + Vite
+# RoadSentinel Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Modern React application built with Vite, TypeScript, and Tailwind CSS.
 
-Currently, two official plugins are available:
+## 🚀 Tech Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+### Core
+- **Vite** - Lightning-fast build tool with HMR
+- **React 18** - UI library with modern hooks
+- **TypeScript** - Type-safe development
+- **Tailwind CSS** - Utility-first CSS framework
 
-## React Compiler
+### Libraries
+- **React Router** - Client-side routing
+- **Zustand** - Lightweight state management
+- **React Query** - Data fetching and caching
+- **Axios** - HTTP client with interceptors
+- **React Hook Form** - Performant form handling
+- **Zod** - Schema validation
+- **Lucide React** - Modern icon library
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 📁 Project Structure
 
-## Expanding the ESLint configuration
+```
+src/
+├── components/     # Reusable UI components
+│   ├── Button.tsx
+│   ├── Card.tsx
+│   └── Navbar.tsx
+├── pages/          # Page components
+│   ├── Home.tsx
+│   └── About.tsx
+├── hooks/          # Custom React hooks
+│   └── useDebounce.ts
+├── utils/          # Utility functions
+│   └── constants.ts
+├── services/       # API services
+│   └── api.ts
+├── store/          # State management
+│   └── authStore.ts
+├── types/          # TypeScript definitions
+│   └── index.ts
+├── assets/         # Static assets
+└── styles/         # Global styles
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## 🛠️ Getting Started
+
+### Install Dependencies
+```bash
+npm install
+```
+
+### Development Server
+```bash
+npm run dev
+```
+Opens at `http://localhost:5173`
+
+### Build for Production
+```bash
+npm run build
+```
+
+### Preview Production Build
+```bash
+npm run preview
+```
+
+## 🎨 Component Examples
+
+### Button Component
+```tsx
+import { Button } from '@/components/Button';
+
+<Button variant="primary" size="lg">Click Me</Button>
+<Button variant="outline">Secondary Action</Button>
+```
+
+### Using Zustand Store
+```tsx
+import { useAuthStore } from '@/store/authStore';
+
+const { user, login, logout } = useAuthStore();
+```
+
+### API Calls with Axios
+```tsx
+import { api } from '@/services/api';
+
+const response = await api.get('/endpoint');
+```
+
+## 🔧 Configuration
+
+### Path Aliases
+The project uses `@/` as an alias for the `src/` directory:
+```tsx
+import { Button } from '@/components/Button';
+```
+
+### Environment Variables
+Create a `.env` file:
+```env
+VITE_API_URL=http://localhost:3000/api
+```
+
+## 📝 Available Scripts
+
+- `npm run dev` - Start development server
+- `npm run build` - Build for production
+- `npm run preview` - Preview production build
+- `npm run lint` - Run ESLint
+
+## 🎯 Next Steps
+
+1. Configure your API endpoint in `.env`
+2. Add your pages to `src/pages/`
+3. Create reusable components in `src/components/`
+4. Set up authentication using the provided `authStore`
+5. Add your API services in `src/services/`
+
+## 📚 Learn More
+
+- [Vite Documentation](https://vite.dev/)
+- [React Documentation](https://react.dev/)
+- [Tailwind CSS](https://tailwindcss.com/)
+- [React Router](https://reactrouter.com/)
+- [Zustand](https://github.com/pmndrs/zustand)
