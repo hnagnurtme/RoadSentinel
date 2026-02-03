@@ -1,102 +1,61 @@
-# Byte-compiled / optimized / DLL files
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
 *.so
-
-# Distribution / packaging
 .Python
 build/
+develop-eggs/
 dist/
 downloads/
 eggs/
 .eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
 *.egg-info/
-*.egg
 .installed.cfg
+*.egg
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
-.pytest_cache/
-
-# Translations
-*.mo
-*.pot
-
-# Flask/Django/General runtime files
+# Django
 *.log
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+/media
+/staticfiles
+/static
 
-# Logs and misc
-logs/
-*.sqlite3
-
-# Instance / build caches
-instance/
-.webassets-cache
-
-# Sphinx documentation
-docs/_build/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# pyenv
-.python-version
-
-# pipenv
-Pipfile.lock
-
-# Virtualenv / envs
-.env
-.env.*
-venv/
-.venv/
-ENV/
-env/
-env.bak/
-venv.bak/
-
-# Spyder / Rope
-.spyproject
-.ropeproject
-
-# mkdocs
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# IDEs
+# IDE
 .vscode/
 .idea/
-*.sublime-project
-*.sublime-workspace
+*.swp
+*.swo
+*~
 
-# macOS
+# OS
 .DS_Store
+Thumbs.db
 
-# Docker
-*.env
-docker-compose.override.yml
+# Environment
+.env
+.env.local
 
-# Other
+# Coverage
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# pytest
+.pytest_cache/
