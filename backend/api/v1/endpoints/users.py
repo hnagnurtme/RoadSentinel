@@ -1,9 +1,12 @@
 from fastapi import APIRouter
-from constants import  UserDocs, Messages
-from  schemas import UserResponse , ApiResponse
+
+from api.dependencies import CurrentUser
+from constants import Messages, UserDocs
+from schemas import ApiResponse, UserResponse
 
 
 router = APIRouter(prefix="/users", tags=["Users"])
+
 
 @router.get(
     "/me",
@@ -12,9 +15,9 @@ router = APIRouter(prefix="/users", tags=["Users"])
     description=UserDocs.GetMe.DESCRIPTION,
 )
 async def get_current_user_profile(
-
+    current_user: CurrentUser,
 ) -> ApiResponse[UserResponse]:
     return ApiResponse(
         message=Messages.USER_PROFILE_RETRIEVED,
-        data="OK"
+        data=UserResponse.model_validate(current_user),
     )

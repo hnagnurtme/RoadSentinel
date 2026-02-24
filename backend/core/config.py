@@ -24,10 +24,19 @@ class Settings(BaseSettings):
     JWT_REFRESH_TOKEN_EXPIRE_DAYS : int = 7
 
     model_config = SettingsConfigDict(
-        env_file = ".env",
-        env_file_encoding = "utf-8",
-        case_sensitive = True,
-        extra="ignore"
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=True,
+        extra="ignore",
     )
+
+    @property
+    def debug(self) -> bool:
+        return self.DEBUG
+
+    @property
+    def is_development(self) -> bool:
+        return self.APP_ENV == "development"
+
 
 settings = Settings()

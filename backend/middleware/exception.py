@@ -38,7 +38,7 @@ class ExceptionMiddleware(BaseHTTPMiddleware):
                 content=ErrorResponse(
                     message=exc.message,
                     error_code=exc.error_code,
-                    details=exc.details,
+                    details=exc.detail,
                 ).model_dump(),
             )
 
