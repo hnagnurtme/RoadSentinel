@@ -1,6 +1,4 @@
 """Error codes used throughout the application."""
-
-
 class ErrorCodes:
     """Centralized error codes to avoid magic strings."""
 

@@ -19,7 +19,7 @@ app = FastAPI(
 # 1. CORS - outermost, handles preflight requests
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if settings.is_development else [],
+    allow_origins=["*"] if settings.APP_ENV=='development' else [],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -36,7 +36,6 @@ app.include_router(router)
 
 @app.get("/", tags=["Root"])
 async def root() -> dict[str, Any]:
-    """Root endpoint - API information."""
     return {
         "name": settings.APP_NAME,
         "version": "1.0.0",

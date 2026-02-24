@@ -1,6 +1,6 @@
-from  common import ApiResponse,ErrorResponse,PaginatedResponse,PaginationMeta, create_pagination_meta
+from .common import ApiResponse,ErrorResponse,PaginatedResponse,PaginationMeta, create_pagination_meta
 
-from users import UserResponse
+from .users import UserResponse
 
 __all__ = [
 
