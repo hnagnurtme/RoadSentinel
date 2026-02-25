@@ -154,14 +154,35 @@ cython_debug/
 .vscode/
 
 # AI/ML specific
-data/
+
+# Ignore raw data (large image files) but keep processed metadata (CSV)
+data/raw/
+
+# Ignore trained model weights (large binary files)
 models/
 *.h5
 *.pth
 *.pt
-*.pkl
 *.onnx
 *.weights
 *.pb
-/results/
-/logs/
+*.tflite
+*.torchscript
+
+# Pickle files (can contain large serialized objects)
+*.pkl
+*.pickle
+
+# Output directories
+results/
+logs/
+runs/
+wandb/
+mlruns/
+
+# TensorBoard logs
+tensorboard_logs/
+
+# Keep processed metadata
+!data/processed/
+!data/processed/*.csv
