@@ -1,4 +1,4 @@
-# RoadSentinel Frontend
+# RoadSentinel - Frontend Web App
 
 Modern React application built with Vite, TypeScript, and Tailwind CSS.
 
@@ -51,45 +51,6 @@ src/
 npm install
 ```
 
-### Development Server
-```bash
-npm run dev
-```
-Opens at `http://localhost:5173`
-
-### Build for Production
-```bash
-npm run build
-```
-
-### Preview Production Build
-```bash
-npm run preview
-```
-
-## 🎨 Component Examples
-
-### Button Component
-```tsx
-import { Button } from '@/components/Button';
-
-<Button variant="primary" size="lg">Click Me</Button>
-<Button variant="outline">Secondary Action</Button>
-```
-
-### Using Zustand Store
-```tsx
-import { useAuthStore } from '@/store/authStore';
-
-const { user, login, logout } = useAuthStore();
-```
-
-### API Calls with Axios
-```tsx
-import { api } from '@/services/api';
-
-const response = await api.get('/endpoint');
-```
 
 ## 🔧 Configuration
 
