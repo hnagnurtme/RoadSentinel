@@ -6,4 +6,5 @@ matplotlib
 seaborn
 scikit-learn
 jupyterlab
+certifi
 seaborn
