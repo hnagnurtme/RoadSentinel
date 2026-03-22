@@ -1,121 +1,379 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import 'models/app_config.dart';
+import 'models/pipeline_status.dart';
+import 'services/config_service.dart';
+import 'services/pipeline_service.dart';
+
 void main() {
-  runApp(const MyApp());
+  runApp(const RoadSentinelApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class RoadSentinelApp extends StatelessWidget {
+  const RoadSentinelApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'RoadSentinel Gateway Mobile',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: .fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF005B96)),
+        scaffoldBackgroundColor: const Color(0xFFF5F7FA),
+        useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const GatewayMobilePage(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class GatewayMobilePage extends StatefulWidget {
+  const GatewayMobilePage({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<GatewayMobilePage> createState() => _GatewayMobilePageState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _GatewayMobilePageState extends State<GatewayMobilePage> {
+  static const _supportedModelAssets = [
+    'assets/models/best_float16.tflite',
+    'assets/models/best_float32.tflite',
+  ];
 
-  void _incrementCounter() {
+  final _configService = ConfigService();
+
+  final _webcamUrlCtrl = TextEditingController();
+  final _wsUrlCtrl = TextEditingController();
+  final _httpUrlCtrl = TextEditingController();
+  final _deviceIdCtrl = TextEditingController();
+  final _fpsCtrl = TextEditingController();
+  final _cloudNameCtrl = TextEditingController();
+  final _uploadPresetCtrl = TextEditingController();
+  final _cloudFolderCtrl = TextEditingController();
+
+  bool _cloudinaryEnabled = false;
+  bool _loading = true;
+  String _selectedModelAssetPath = AppConfig.defaults().modelAssetPath;
+
+  AppConfig _config = AppConfig.defaults();
+  PipelineService? _pipeline;
+  StreamSubscription<PipelineStatus>? _statusSub;
+  PipelineStatus _status = PipelineStatus.idle();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadConfig();
+  }
+
+  @override
+  void dispose() {
+    _statusSub?.cancel();
+    _pipeline?.dispose();
+    _webcamUrlCtrl.dispose();
+    _wsUrlCtrl.dispose();
+    _httpUrlCtrl.dispose();
+    _deviceIdCtrl.dispose();
+    _fpsCtrl.dispose();
+    _cloudNameCtrl.dispose();
+    _uploadPresetCtrl.dispose();
+    _cloudFolderCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadConfig() async {
+    final config = await _configService.load();
+    _config = config;
+
+    _webcamUrlCtrl.text = config.webcamServerUrl;
+    _wsUrlCtrl.text = config.wsUrl;
+    _httpUrlCtrl.text = config.httpUrl;
+    _deviceIdCtrl.text = config.deviceId;
+    _fpsCtrl.text = config.targetFps.toString();
+    _cloudNameCtrl.text = config.cloudinaryCloudName;
+    _uploadPresetCtrl.text = config.cloudinaryUploadPreset;
+    _cloudFolderCtrl.text = config.cloudinaryFolder;
+    _cloudinaryEnabled = config.cloudinaryEnabled;
+    _selectedModelAssetPath = _supportedModelAssets.contains(config.modelAssetPath)
+      ? config.modelAssetPath
+      : AppConfig.defaults().modelAssetPath;
+
+    if (!mounted) {
+      return;
+    }
+
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      _loading = false;
     });
+  }
+
+  AppConfig _readConfigFromForm() {
+    final fps = int.tryParse(_fpsCtrl.text.trim()) ?? _config.targetFps;
+    return AppConfig(
+      webcamServerUrl: _webcamUrlCtrl.text.trim(),
+      targetFps: fps.clamp(1, 30),
+      modelAssetPath: _selectedModelAssetPath,
+      modelInputSize: _config.modelInputSize,
+      inferenceConfidenceThreshold: _config.inferenceConfidenceThreshold,
+      inferenceIouThreshold: _config.inferenceIouThreshold,
+      inferenceMaxDetections: _config.inferenceMaxDetections,
+      wsUrl: _wsUrlCtrl.text.trim(),
+      httpUrl: _httpUrlCtrl.text.trim(),
+      deviceId: _deviceIdCtrl.text.trim(),
+      reconnectDelaySeconds: _config.reconnectDelaySeconds,
+      queueMaxsize: _config.queueMaxsize,
+      cloudinaryEnabled: _cloudinaryEnabled,
+      cloudinaryCloudName: _cloudNameCtrl.text.trim(),
+      cloudinaryUploadPreset: _uploadPresetCtrl.text.trim(),
+      cloudinaryFolder: _cloudFolderCtrl.text.trim().isEmpty
+          ? _config.cloudinaryFolder
+          : _cloudFolderCtrl.text.trim(),
+      unknownEnterFrames: _config.unknownEnterFrames,
+      minSleepConfidence: _config.minSleepConfidence,
+      minPhoneConfidence: _config.minPhoneConfidence,
+      minDistractedConfidence: _config.minDistractedConfidence,
+      sleepEnterFrames: _config.sleepEnterFrames,
+      sleepExitFrames: _config.sleepExitFrames,
+      phoneEnterFrames: _config.phoneEnterFrames,
+      phoneExitFrames: _config.phoneExitFrames,
+      distractedEnterFrames: _config.distractedEnterFrames,
+      distractedExitFrames: _config.distractedExitFrames,
+      eventPriority: _config.eventPriority,
+      presenceLabels: _config.presenceLabels,
+      sleepLabels: _config.sleepLabels,
+      phoneLabels: _config.phoneLabels,
+      distractedLabels: _config.distractedLabels,
+      sleepEvidenceSeconds: _config.sleepEvidenceSeconds,
+      sleepTriggerRatio: _config.sleepTriggerRatio,
+      useSleepProxy: _config.useSleepProxy,
+      minPresenceConfidence: _config.minPresenceConfidence,
+      minEyesOpenConfidence: _config.minEyesOpenConfidence,
+      labels: _config.labels,
+    );
+  }
+
+  Future<void> _saveConfig() async {
+    final next = _readConfigFromForm();
+    await _configService.save(next);
+    setState(() {
+      _config = next;
+    });
+    _showSnack('Saved config');
+  }
+
+  Future<void> _startPipeline() async {
+    await _stopPipeline();
+    final next = _readConfigFromForm();
+    await _configService.save(next);
+
+    final pipeline = PipelineService(next);
+    _statusSub = pipeline.statusStream.listen((status) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _status = status;
+      });
+    });
+
+    await pipeline.start();
+    setState(() {
+      _config = next;
+      _pipeline = pipeline;
+    });
+  }
+
+  Future<void> _stopPipeline() async {
+    await _statusSub?.cancel();
+    _statusSub = null;
+    await _pipeline?.stop();
+    _pipeline = null;
+  }
+
+  void _showSnack(String text) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
+    if (_loading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
+    final running = _pipeline != null && _status.running;
+
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        title: const Text('RoadSentinel Gateway Mobile'),
+        actions: [
+          IconButton(
+            onPressed: _saveConfig,
+            icon: const Icon(Icons.save),
+            tooltip: 'Save config',
+          ),
+        ],
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: .center,
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
           children: [
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+            _StatusCard(status: _status, running: running),
+            const SizedBox(height: 12),
+            _sectionTitle('Capture & Sender'),
+            _field(_webcamUrlCtrl, 'Webcam Server URL (MJPEG)'),
+            _field(_wsUrlCtrl, 'WebSocket URL'),
+            _field(_httpUrlCtrl, 'HTTP Fallback URL'),
+            _field(_deviceIdCtrl, 'Device ID'),
+            _field(_fpsCtrl, 'Target FPS', keyboardType: TextInputType.number),
+            const SizedBox(height: 6),
+            _modelSelector(),
+            const SizedBox(height: 12),
+            _sectionTitle('Cloudinary Evidence'),
+            SwitchListTile(
+              value: _cloudinaryEnabled,
+              title: const Text('Enable Cloudinary Upload'),
+              onChanged: (v) => setState(() => _cloudinaryEnabled = v),
+            ),
+            _field(_cloudNameCtrl, 'Cloud name'),
+            _field(_uploadPresetCtrl, 'Unsigned upload preset'),
+            _field(_cloudFolderCtrl, 'Folder'),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: running ? null : _startPipeline,
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('Start Pipeline'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: running ? _stopPipeline : null,
+                    icon: const Icon(Icons.stop),
+                    label: const Text('Stop'),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
+    );
+  }
+
+  Widget _sectionTitle(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        text,
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+      ),
+    );
+  }
+
+  Widget _field(
+    TextEditingController controller,
+    String label, {
+    TextInputType keyboardType = TextInputType.text,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: TextField(
+        controller: controller,
+        keyboardType: keyboardType,
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+        ),
+      ),
+    );
+  }
+
+  Widget _modelSelector() {
+    return DropdownButtonFormField<String>(
+      initialValue: _selectedModelAssetPath,
+      items: _supportedModelAssets
+          .map(
+            (path) => DropdownMenuItem<String>(
+              value: path,
+              child: Text(path.split('/').last),
+            ),
+          )
+          .toList(growable: false),
+      onChanged: (value) {
+        if (value == null) {
+          return;
+        }
+        setState(() {
+          _selectedModelAssetPath = value;
+        });
+      },
+      decoration: const InputDecoration(
+        labelText: 'Model Asset',
+        border: OutlineInputBorder(),
+      ),
+    );
+  }
+}
+
+class _StatusCard extends StatelessWidget {
+  const _StatusCard({required this.status, required this.running});
+
+  final PipelineStatus status;
+  final bool running;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (status.event) {
+      'sleeping' => Colors.red,
+      'using_phone' => Colors.orange,
+      'distracted' => Colors.amber,
+      'unknown' => Colors.blueGrey,
+      _ => Colors.green,
+    };
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  running ? Icons.circle : Icons.pause_circle,
+                  color: running ? Colors.green : Colors.grey,
+                ),
+                const SizedBox(width: 8),
+                Text(running ? 'Running' : 'Stopped'),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Event: ${status.event}',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(color: color),
+            ),
+            Text('Event Conf: ${status.confidence.toStringAsFixed(2)}'),
+            Text('Max Det Conf: ${status.maxDetectionConfidence.toStringAsFixed(2)}'),
+            Text('Detections: ${status.detectionCount}'),
+            if (status.lastEvidenceUrl != null) ...[
+              const SizedBox(height: 8),
+              Text('Evidence: ${status.lastEvidenceUrl}'),
+            ],
+            if (status.lastError != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Error: ${status.lastError}',
+                style: const TextStyle(color: Colors.red),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
