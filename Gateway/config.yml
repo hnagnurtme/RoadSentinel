@@ -1,0 +1,14 @@
+debug_server:
+  model_path: models/best.pt
+  webcam_index: 0
+  inference_width: 640
+  inference_height: 480
+  confidence_threshold: 0.40
+  iou_threshold: 0.45
+  fps_limit: 10
+  ws_port: 9001
+  http_port: 9002
+  violation_confidence_threshold: 0.60
+  evidence_device_id: debug_server
+  evidence_window_seconds: 8
+  evidence_trigger_ratio: 1.0

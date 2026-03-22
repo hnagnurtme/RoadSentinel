@@ -1,0 +1,20 @@
+# Core computer vision
+opencv-python>=4.9.0
+
+# YOLO inference (includes torch dependency resolution)
+ultralytics>=8.2.0
+
+# HTTP requests – ESP32 stream + HTTP fallback sender
+requests>=2.31.0
+
+# Async WebSocket client
+websockets>=12.0
+
+# YAML config loader (debug_server config.yml)
+PyYAML>=6.0
+
+# Typing extras (for Python < 3.12 compatibility with TypedDict)
+typing-extensions>=4.9.0
+
+# Test runner
+pytest>=8.0.0
