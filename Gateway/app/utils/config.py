@@ -174,12 +174,50 @@ class SenderConfig:
 
 
 @dataclass
+class EvidenceConfig:
+    # Toggle evidence recording.
+    enabled: bool = True
+
+    # Folder to store generated evidence clips.
+    evidence_dir: str = "evidence"
+
+    # Save one clip when sleeping lasts this many consecutive seconds.
+    sleep_evidence_seconds: int = 5
+
+    # Trigger only when sleeping occupancy in the 10s window passes this ratio.
+    sleep_trigger_ratio: float = 0.6
+
+    # Fallback proxy when explicit sleep labels are unstable.
+    use_sleep_proxy: bool = True
+    min_presence_confidence: float = 0.4
+    min_eyes_open_confidence: float = 0.6
+
+    # Video codec for OpenCV VideoWriter (4 characters).
+    codec: str = "mp4v"
+
+    def __post_init__(self) -> None:
+        if not self.evidence_dir:
+            raise ValueError("evidence.evidence_dir must not be empty")
+        if self.sleep_evidence_seconds <= 0:
+            raise ValueError("evidence.sleep_evidence_seconds must be > 0")
+        if not 0.0 < self.sleep_trigger_ratio <= 1.0:
+            raise ValueError("evidence.sleep_trigger_ratio must be in (0, 1]")
+        if not 0.0 <= self.min_presence_confidence <= 1.0:
+            raise ValueError("evidence.min_presence_confidence must be in [0, 1]")
+        if not 0.0 <= self.min_eyes_open_confidence <= 1.0:
+            raise ValueError("evidence.min_eyes_open_confidence must be in [0, 1]")
+        if len(self.codec) != 4:
+            raise ValueError("evidence.codec must be exactly 4 characters")
+
+
+@dataclass
 class GatewayConfig:
     capture: CaptureConfig = field(default_factory=CaptureConfig)
     preprocess: PreprocessConfig = field(default_factory=PreprocessConfig)
     inference: InferenceConfig = field(default_factory=InferenceConfig)
     event: EventConfig = field(default_factory=EventConfig)
     sender: SenderConfig = field(default_factory=SenderConfig)
+    evidence: EvidenceConfig = field(default_factory=EvidenceConfig)
 
 
 # ---------------------------------------------------------------------------

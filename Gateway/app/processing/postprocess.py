@@ -24,6 +24,7 @@ RELEVANT_CLASSES = {
     "driver",
     "face",
     "eye",
+    "eyes open",
     "sleeping",
     "eyes closed",
     "yawning",

@@ -2,6 +2,7 @@ import pytest
 
 from app.utils.config import (
     CaptureConfig,
+    EvidenceConfig,
     EventConfig,
     InferenceConfig,
     PreprocessConfig,
@@ -45,3 +46,28 @@ def test_event_config_rejects_invalid_hysteresis_pairs() -> None:
 def test_sender_config_rejects_non_positive_queue_size() -> None:
     with pytest.raises(ValueError, match="queue_maxsize"):
         SenderConfig(queue_maxsize=0)
+
+
+def test_evidence_config_rejects_invalid_sleep_seconds() -> None:
+    with pytest.raises(ValueError, match="sleep_evidence_seconds"):
+        EvidenceConfig(sleep_evidence_seconds=0)
+
+
+def test_evidence_config_rejects_invalid_codec_length() -> None:
+    with pytest.raises(ValueError, match="exactly 4"):
+        EvidenceConfig(codec="mp4")
+
+
+def test_evidence_config_rejects_invalid_trigger_ratio() -> None:
+    with pytest.raises(ValueError, match="sleep_trigger_ratio"):
+        EvidenceConfig(sleep_trigger_ratio=0)
+
+
+def test_evidence_config_rejects_invalid_presence_threshold() -> None:
+    with pytest.raises(ValueError, match="min_presence_confidence"):
+        EvidenceConfig(min_presence_confidence=1.1)
+
+
+def test_evidence_config_rejects_invalid_eyes_open_threshold() -> None:
+    with pytest.raises(ValueError, match="min_eyes_open_confidence"):
+        EvidenceConfig(min_eyes_open_confidence=-0.1)

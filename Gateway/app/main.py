@@ -15,6 +15,8 @@ import time
 
 from app.capture.esp32 import ESP32Capture
 from app.capture.webcam import WebcamCapture
+from app.evidence.recorder import EvidenceRecorder
+from app.evidence.trigger import SleepWindowTrigger
 from app.event.logic import EventLogic
 from app.inference.detect import run_inference
 from app.inference.model import load_model
@@ -82,12 +84,37 @@ def main() -> None:
         # 4. Build event classifier
         event_logic = EventLogic(CONFIG.event)
 
+        # 5. Build minimal evidence recorder
+        evidence = EvidenceRecorder(
+            CONFIG.evidence,
+            fps=CONFIG.capture.target_fps,
+            device_id=CONFIG.sender.device_id,
+        )
+        sleep_trigger = SleepWindowTrigger(
+            fps=CONFIG.capture.target_fps,
+            window_seconds=CONFIG.evidence.sleep_evidence_seconds,
+            occupancy_threshold=CONFIG.evidence.sleep_trigger_ratio,
+        )
+        sleep_labels = {label.lower() for label in CONFIG.event.sleep_labels}
+        presence_labels = {label.lower() for label in CONFIG.event.presence_labels}
+        eyes_open_labels = {"eyes open", "eye"}
+        min_sleep_conf = CONFIG.event.min_sleep_confidence
+        min_presence_conf = CONFIG.evidence.min_presence_confidence
+        min_eyes_open_conf = CONFIG.evidence.min_eyes_open_confidence
+
         # Frame timing
         frame_interval = 1.0 / CONFIG.capture.target_fps
 
         logger.info(
             "Main loop running at ~%d FPS. Press Ctrl+C to stop.",
             CONFIG.capture.target_fps,
+        )
+        logger.info(
+            "Evidence config: window=%ss ratio=%.2f proxy=%s min_sleep=%.2f",
+            CONFIG.evidence.sleep_evidence_seconds,
+            CONFIG.evidence.sleep_trigger_ratio,
+            CONFIG.evidence.use_sleep_proxy,
+            CONFIG.event.min_sleep_confidence,
         )
 
         while _running:
@@ -99,6 +126,8 @@ def main() -> None:
                 logger.warning("No frame received – skipping cycle.")
                 time.sleep(frame_interval)
                 continue
+
+            evidence.push_frame(frame)
 
             # ── Preprocess ───────────────────────────────────────────────────
             try:
@@ -124,6 +153,31 @@ def main() -> None:
             logger.info(
                 "Event=%s  conf=%.2f  dets=%d", event, confidence, len(detections)
             )
+
+            sleep_evidence_present = any(
+                det["label"].lower() in sleep_labels
+                and det["confidence"] >= min_sleep_conf
+                for det in detections
+            )
+
+            if CONFIG.evidence.use_sleep_proxy and not sleep_evidence_present:
+                has_presence = any(
+                    det["label"].lower() in presence_labels
+                    and det["confidence"] >= min_presence_conf
+                    for det in detections
+                )
+                has_eyes_open = any(
+                    det["label"].lower() in eyes_open_labels
+                    and det["confidence"] >= min_eyes_open_conf
+                    for det in detections
+                )
+                sleep_evidence_present = has_presence and (not has_eyes_open)
+
+            should_save = sleep_trigger.update(sleep_evidence_present)
+            if should_save:
+                saved = evidence.save_sleeping_clip(confidence)
+                if saved is not None:
+                    logger.warning("Evidence written to %s", saved)
 
             # ── Send result to backend ───────────────────────────────────────
             payload = {
