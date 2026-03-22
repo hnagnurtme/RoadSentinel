@@ -1,0 +1,29 @@
+set positional-arguments
+
+# Show available recipes
+help:
+    @just --list
+
+# Run ESP32-CAM simulator from local webcam
+simulator host="0.0.0.0" port="8081" webcam="0" width="640" height="480" fps="12" quality="80":
+    sh -c 'h="{{host}}"; p="{{port}}"; cam="{{webcam}}"; w="{{width}}"; hgt="{{height}}"; f="{{fps}}"; q="{{quality}}"; python esp32_cam_simulator.py --host "${h#host=}" --port "${p#port=}" --webcam-index "${cam#webcam=}" --width "${w#width=}" --height "${hgt#height=}" --fps "${f#fps=}" --jpeg-quality "${q#quality=}"'
+
+# Run Gateway with config.yml/default settings
+gateway:
+    python -m app.main
+
+# Run YOLO debug server (MJPEG + WS)
+debug:
+    python debug_server.py
+
+# Run Gateway and force ESP32 source via env override
+gateway-esp32 url:
+    GATEWAY_CAPTURE_SOURCE=esp32 GATEWAY_ESP32_URL={{url}} python -m app.main
+
+# Run unit tests
+test:
+    python -m pytest -q
+
+# Print LAN IP (Wi-Fi first, then Ethernet)
+lan-ip:
+    sh -c 'ipconfig getifaddr en0 || ipconfig getifaddr en1'
