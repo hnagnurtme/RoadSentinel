@@ -181,6 +181,29 @@ class SenderConfig:
 
 
 @dataclass
+class CloudinaryConfig:
+    # Upload enable flag.
+    enabled: bool = False
+
+    # Credentials loaded from env.yml or environment variables.
+    cloud_name: str = ""
+    api_key: str = ""
+    api_secret: str = ""
+
+    # Optional upload folder prefix on Cloudinary.
+    folder: str = "roadsentinel/gateway"
+
+    def __post_init__(self) -> None:
+        if self.enabled:
+            if not self.cloud_name:
+                raise ValueError("cloudinary.cloud_name must not be empty")
+            if not self.api_key:
+                raise ValueError("cloudinary.api_key must not be empty")
+            if not self.api_secret:
+                raise ValueError("cloudinary.api_secret must not be empty")
+
+
+@dataclass
 class EvidenceConfig:
     # Toggle evidence recording.
     enabled: bool = True
@@ -189,7 +212,7 @@ class EvidenceConfig:
     evidence_dir: str = "evidence"
 
     # Save one clip when sleeping lasts this many consecutive seconds.
-    sleep_evidence_seconds: int = 5
+    sleep_evidence_seconds: int = 8
 
     # Trigger only when sleeping occupancy in the 10s window passes this ratio.
     sleep_trigger_ratio: float = 0.6
@@ -224,6 +247,7 @@ class GatewayConfig:
     inference: InferenceConfig = field(default_factory=InferenceConfig)
     event: EventConfig = field(default_factory=EventConfig)
     sender: SenderConfig = field(default_factory=SenderConfig)
+    cloudinary: CloudinaryConfig = field(default_factory=CloudinaryConfig)
     evidence: EvidenceConfig = field(default_factory=EvidenceConfig)
 
 
@@ -282,6 +306,55 @@ def _load_capture_overrides_from_env() -> dict[str, object]:
     return out
 
 
+def _load_cloudinary_overrides_from_yaml() -> dict[str, object]:
+    """Read optional Cloudinary credentials from env.yml (cloudinary.*)."""
+    env_file = Path(__file__).resolve().parents[2] / "env.yml"
+    if not env_file.exists() or yaml is None:
+        return {}
+
+    try:
+        raw = yaml.safe_load(env_file.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+
+    if not isinstance(raw, dict):
+        return {}
+
+    cloudinary = raw.get("cloudinary")
+    if not isinstance(cloudinary, dict):
+        return {}
+
+    allowed = {"enabled", "cloud_name", "api_key", "api_secret", "folder"}
+    return {k: v for k, v in cloudinary.items() if k in allowed}
+
+
+def _load_cloudinary_overrides_from_env() -> dict[str, object]:
+    """Read optional Cloudinary credentials from environment variables."""
+    out: dict[str, object] = {}
+
+    enabled = os.getenv("CLOUDINARY_ENABLED")
+    if enabled is not None:
+        out["enabled"] = enabled.strip().lower() in {"1", "true", "yes", "on"}
+
+    cloud_name = os.getenv("CLOUDINARY_CLOUD_NAME")
+    if cloud_name:
+        out["cloud_name"] = cloud_name
+
+    api_key = os.getenv("CLOUDINARY_API_KEY")
+    if api_key:
+        out["api_key"] = api_key
+
+    api_secret = os.getenv("CLOUDINARY_API_SECRET")
+    if api_secret:
+        out["api_secret"] = api_secret
+
+    folder = os.getenv("CLOUDINARY_FOLDER")
+    if folder:
+        out["folder"] = folder
+
+    return out
+
+
 def _apply_capture_overrides() -> None:
     """Apply non-invasive runtime overrides for capture config only."""
     overrides = {}
@@ -299,4 +372,29 @@ def _apply_capture_overrides() -> None:
     )
 
 
+def _apply_cloudinary_overrides() -> None:
+    """Apply Cloudinary overrides from env.yml/env vars if present."""
+    overrides = {}
+    overrides.update(_load_cloudinary_overrides_from_yaml())
+    overrides.update(_load_cloudinary_overrides_from_env())
+    if not overrides:
+        return
+
+    current = CONFIG.cloudinary
+    inferred_enabled = current.enabled
+    if "enabled" in overrides:
+        inferred_enabled = bool(overrides["enabled"])
+    elif any(key in overrides for key in ("cloud_name", "api_key", "api_secret")):
+        inferred_enabled = True
+
+    CONFIG.cloudinary = CloudinaryConfig(
+        enabled=inferred_enabled,
+        cloud_name=str(overrides.get("cloud_name", current.cloud_name)),
+        api_key=str(overrides.get("api_key", current.api_key)),
+        api_secret=str(overrides.get("api_secret", current.api_secret)),
+        folder=str(overrides.get("folder", current.folder)),
+    )
+
+
 _apply_capture_overrides()
+_apply_cloudinary_overrides()

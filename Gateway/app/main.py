@@ -89,6 +89,7 @@ def main() -> None:
             CONFIG.evidence,
             fps=CONFIG.capture.target_fps,
             device_id=CONFIG.sender.device_id,
+            cloudinary_cfg=CONFIG.cloudinary,
         )
         sleep_trigger = SleepWindowTrigger(
             fps=CONFIG.capture.target_fps,

@@ -13,6 +13,9 @@ websockets>=12.0
 # YAML config loader (debug_server config.yml)
 PyYAML>=6.0
 
+# Cloudinary media uploads for evidence clips
+cloudinary>=1.41.0
+
 # Typing extras (for Python < 3.12 compatibility with TypedDict)
 typing-extensions>=4.9.0
 

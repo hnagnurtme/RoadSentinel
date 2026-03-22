@@ -31,4 +31,5 @@ logs/
 .env
 .env.*
 *.local
-evidence
+evidence/
+env.yml

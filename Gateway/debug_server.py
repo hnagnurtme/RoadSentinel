@@ -27,7 +27,7 @@ from ultralytics import YOLO
 
 from app.evidence.recorder import EvidenceRecorder
 from app.evidence.trigger import SleepWindowTrigger
-from app.utils.config import EvidenceConfig
+from app.utils.config import CONFIG, EvidenceConfig
 
 try:
     import yaml
@@ -55,7 +55,7 @@ _DEFAULT_CFG: dict[str, Any] = {
     "http_port": 9002,
     "violation_confidence_threshold": 0.60,
     "evidence_device_id": "debug_server",
-    "evidence_window_seconds": 10,
+    "evidence_window_seconds": 8,
     "evidence_trigger_ratio": 0.9,
 }
 
@@ -239,6 +239,7 @@ def inference_loop():
         evidence_cfg,
         fps=FPS_LIMIT,
         device_id=EVIDENCE_DEVICE_ID,
+        cloudinary_cfg=CONFIG.cloudinary,
     )
     evidence_trigger = SleepWindowTrigger(
         fps=FPS_LIMIT,
@@ -246,10 +247,11 @@ def inference_loop():
         occupancy_threshold=evidence_cfg.sleep_trigger_ratio,
     )
     log.info(
-        "Evidence enabled=%s window=%ss ratio=%.2f",
+        "Evidence enabled=%s window=%ss ratio=%.2f cloudinary=%s",
         evidence_cfg.enabled,
         evidence_cfg.sleep_evidence_seconds,
         evidence_cfg.sleep_trigger_ratio,
+        CONFIG.cloudinary.enabled,
     )
 
     while True:
