@@ -64,12 +64,83 @@ class InferenceConfig:
 
 @dataclass
 class EventConfig:
-    # How many consecutive frames without a face/eyes before "sleeping"
-    sleep_frame_threshold: int = 15
+    # Labels used to decide if the driver is currently observable.
+    presence_labels: tuple[str, ...] = ("face", "eye", "person", "driver")
+
+    # Consecutive no-presence frames before emitting "unknown".
+    unknown_enter_frames: int = 12
+
+    # Evidence labels per event.
+    sleep_labels: tuple[str, ...] = (
+        "sleeping",
+        "drowsy",
+        "eyes closed",
+        "yawning",
+    )
+    phone_labels: tuple[str, ...] = (
+        "cell phone",
+        "mobile",
+        "texting",
+        "driver talking on phone",
+    )
+    distracted_labels: tuple[str, ...] = (
+        "distracted",
+        "driver looking away",
+        "driver reaching behind",
+    )
+
+    # Minimum confidence required to treat a label as evidence.
+    min_sleep_confidence: float = 0.6
+    min_phone_confidence: float = 0.6
+    min_distracted_confidence: float = 0.6
+
+    # Hysteresis thresholds: enter must be higher than exit to avoid flicker.
+    sleep_enter_frames: int = 6
+    sleep_exit_frames: int = 3
+    phone_enter_frames: int = 3
+    phone_exit_frames: int = 1
+    distracted_enter_frames: int = 4
+    distracted_exit_frames: int = 2
+
+    # Priority order when multiple events are active.
+    event_priority: tuple[str, ...] = ("using_phone", "sleeping", "distracted")
 
     def __post_init__(self) -> None:
-        if self.sleep_frame_threshold <= 0:
-            raise ValueError("event.sleep_frame_threshold must be > 0")
+        if self.unknown_enter_frames <= 0:
+            raise ValueError("event.unknown_enter_frames must be > 0")
+
+        for name, value in (
+            ("event.min_sleep_confidence", self.min_sleep_confidence),
+            ("event.min_phone_confidence", self.min_phone_confidence),
+            ("event.min_distracted_confidence", self.min_distracted_confidence),
+        ):
+            if not 0.0 <= value <= 1.0:
+                raise ValueError(f"{name} must be in [0, 1]")
+
+        for name, value in (
+            ("event.sleep_enter_frames", self.sleep_enter_frames),
+            ("event.sleep_exit_frames", self.sleep_exit_frames),
+            ("event.phone_enter_frames", self.phone_enter_frames),
+            ("event.phone_exit_frames", self.phone_exit_frames),
+            ("event.distracted_enter_frames", self.distracted_enter_frames),
+            ("event.distracted_exit_frames", self.distracted_exit_frames),
+        ):
+            if value <= 0:
+                raise ValueError(f"{name} must be > 0")
+
+        if self.sleep_exit_frames > self.sleep_enter_frames:
+            raise ValueError("event.sleep_exit_frames must be <= sleep_enter_frames")
+        if self.phone_exit_frames > self.phone_enter_frames:
+            raise ValueError("event.phone_exit_frames must be <= phone_enter_frames")
+        if self.distracted_exit_frames > self.distracted_enter_frames:
+            raise ValueError(
+                "event.distracted_exit_frames must be <= distracted_enter_frames"
+            )
+
+        if not self.presence_labels:
+            raise ValueError("event.presence_labels must not be empty")
+        if not self.event_priority:
+            raise ValueError("event.event_priority must not be empty")
 
 
 @dataclass

@@ -1,10 +1,13 @@
 """
-logic.py – Driver-event classification logic.
+logic.py – Driver-event classification with hysteresis.
 
-Translates raw YOLO detections into a human-readable event string
-("normal" | "using_phone" | "sleeping" | "distracted").
-Uses a simple stateful counter so transient false negatives for face/eye
-detection don't immediately trigger a "sleeping" alert.
+The classifier consumes per-frame detections and outputs stable events:
+"normal" | "using_phone" | "sleeping" | "distracted" | "unknown".
+
+Key design:
+- Event evidence is label-based (no-face is not interpreted as sleeping).
+- Each event has enter/exit frame thresholds to reduce flicker.
+- Long observation loss becomes "unknown" so upstream can treat it safely.
 """
 
 from app.inference.detect import Detection
@@ -13,25 +16,85 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-# Class labels to treat as face/eye presence indicators
-_FACE_LABELS = {"face", "person", "eye"}
-
-# Class labels interpreted as phone usage
-_PHONE_LABELS = {"cell phone"}
-
 
 class EventLogic:
     """
-    Stateful event classifier.
+    Stateful event classifier with per-event hysteresis.
 
-    Maintains a counter of consecutive frames where no face/eyes are visible,
-    and raises "sleeping" once the threshold is exceeded.
+    Each event accumulates evidence over frames:
+    - enters active state at enter_threshold
+    - stays active until score falls below exit_threshold
     """
 
     def __init__(self, cfg: EventConfig) -> None:
         self._cfg = cfg
-        # Counts consecutive frames with no face/eye detected
-        self._no_face_counter: int = 0
+        self._no_presence_counter = 0
+
+        self._event_scores: dict[str, int] = {
+            "sleeping": 0,
+            "using_phone": 0,
+            "distracted": 0,
+        }
+        self._event_active: dict[str, bool] = {
+            "sleeping": False,
+            "using_phone": False,
+            "distracted": False,
+        }
+
+        self._enter_thresholds = {
+            "sleeping": cfg.sleep_enter_frames,
+            "using_phone": cfg.phone_enter_frames,
+            "distracted": cfg.distracted_enter_frames,
+        }
+        self._exit_thresholds = {
+            "sleeping": cfg.sleep_exit_frames,
+            "using_phone": cfg.phone_exit_frames,
+            "distracted": cfg.distracted_exit_frames,
+        }
+
+        self._label_sets = {
+            "sleeping": {label.lower() for label in cfg.sleep_labels},
+            "using_phone": {label.lower() for label in cfg.phone_labels},
+            "distracted": {label.lower() for label in cfg.distracted_labels},
+        }
+
+        self._confidence_thresholds = {
+            "sleeping": cfg.min_sleep_confidence,
+            "using_phone": cfg.min_phone_confidence,
+            "distracted": cfg.min_distracted_confidence,
+        }
+
+        self._presence_labels = {label.lower() for label in cfg.presence_labels}
+
+    @staticmethod
+    def _max_conf_by_label(detections: list[Detection]) -> dict[str, float]:
+        out: dict[str, float] = {}
+        for det in detections:
+            label = det["label"].lower()
+            conf = det["confidence"]
+            prev = out.get(label, 0.0)
+            if conf > prev:
+                out[label] = conf
+        return out
+
+    def _update_event_state(self, event: str, has_evidence: bool) -> None:
+        score = self._event_scores[event]
+        enter = self._enter_thresholds[event]
+        exit_ = self._exit_thresholds[event]
+
+        if has_evidence:
+            score = min(enter, score + 1)
+        else:
+            score = max(0, score - 1)
+
+        active = self._event_active[event]
+        if active and score < exit_:
+            active = False
+        elif (not active) and score >= enter:
+            active = True
+
+        self._event_scores[event] = score
+        self._event_active[event] = active
 
     def classify(self, detections: list[Detection]) -> tuple[str, float]:
         """
@@ -42,58 +105,50 @@ class EventLogic:
 
         Returns:
             (event, confidence) where event is one of:
-                "using_phone" | "sleeping" | "distracted" | "normal"
-            and confidence is the highest confidence among relevant detections.
+                "using_phone" | "sleeping" | "distracted" | "unknown" | "normal"
+            and confidence reflects event-specific evidence, not global max confidence.
         """
-        labels = {d["label"].lower() for d in detections}
-        confidences = [d["confidence"] for d in detections] or [0.0]
-        max_confidence = max(confidences)
+        label_conf = self._max_conf_by_label(detections)
 
-        # --- Priority 1: Phone usage ---
-        if labels & _PHONE_LABELS:
-            self._no_face_counter = 0
-            event = "using_phone"
-            conf = max(
-                d["confidence"]
-                for d in detections
-                if d["label"].lower() in _PHONE_LABELS
-            )
-            logger.info("Event: %s (conf=%.2f)", event, conf)
-            return event, conf
-
-        # --- Priority 2: Sleeping / no face ---
-        face_present = bool(labels & _FACE_LABELS)
-        if not face_present:
-            self._no_face_counter += 1
-            logger.debug(
-                "No face/eye detected (%d/%d frames)",
-                self._no_face_counter,
-                self._cfg.sleep_frame_threshold,
-            )
+        # Observation quality tracking: no presence -> unknown after threshold.
+        has_presence = any(label in self._presence_labels for label in label_conf)
+        if has_presence:
+            self._no_presence_counter = 0
         else:
-            self._no_face_counter = 0
+            self._no_presence_counter += 1
 
-        if self._no_face_counter >= self._cfg.sleep_frame_threshold:
+        event_confidence: dict[str, float] = {}
+        for event in self._event_scores:
+            evidence_conf = max(
+                (
+                    conf
+                    for label, conf in label_conf.items()
+                    if label in self._label_sets[event]
+                ),
+                default=0.0,
+            )
+            event_confidence[event] = evidence_conf
+            has_evidence = evidence_conf >= self._confidence_thresholds[event]
+            self._update_event_state(event, has_evidence)
+
+        for event in self._cfg.event_priority:
+            if self._event_active.get(event, False):
+                conf = event_confidence.get(event, 0.0)
+                logger.info("Event: %s (conf=%.2f)", event, conf)
+                return event, conf
+
+        if self._no_presence_counter >= self._cfg.unknown_enter_frames:
             logger.warning(
-                "Sleeping event triggered after %d frames with no face/eye",
-                self._no_face_counter,
+                "Event: unknown (no observable driver for %d frames)",
+                self._no_presence_counter,
             )
-            return "sleeping", max_confidence
+            return "unknown", 0.0
 
-        # --- Priority 3: Distracted (face present but model flags distraction) ---
-        distraction_labels = {"distracted", "drowsy"}
-        if labels & distraction_labels:
-            conf = max(
-                d["confidence"]
-                for d in detections
-                if d["label"].lower() in distraction_labels
-            )
-            logger.info("Event: distracted (conf=%.2f)", conf)
-            return "distracted", conf
-
-        # --- Default: normal ---
-        return "normal", max_confidence
+        return "normal", 0.0
 
     def reset(self) -> None:
         """Reset internal counters (e.g. when the capture source restarts)."""
-        self._no_face_counter = 0
+        self._no_presence_counter = 0
+        for event in self._event_scores:
+            self._event_scores[event] = 0
+            self._event_active[event] = False

@@ -17,12 +17,20 @@ logger = get_logger(__name__)
 # Only these will be acted upon by the event layer.
 RELEVANT_CLASSES = {
     "cell phone",
+    "mobile",
+    "texting",
+    "driver talking on phone",
     "person",
+    "driver",
     "face",
     "eye",
     "sleeping",
+    "eyes closed",
+    "yawning",
     "drowsy",
     "distracted",
+    "driver looking away",
+    "driver reaching behind",
 }
 
 
@@ -61,9 +69,9 @@ def annotate_frame(
 
     # Colour depends on event severity
     colour_map = {
-        "normal": (0, 255, 0),        # green
-        "sleeping": (0, 0, 255),      # red
-        "using_phone": (0, 140, 255), # orange
+        "normal": (0, 255, 0),  # green
+        "sleeping": (0, 0, 255),  # red
+        "using_phone": (0, 140, 255),  # orange
         "distracted": (0, 255, 255),  # yellow
     }
     box_colour = colour_map.get(event, (200, 200, 200))

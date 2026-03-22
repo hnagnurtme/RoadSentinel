@@ -27,9 +27,19 @@ def test_inference_config_rejects_invalid_thresholds() -> None:
         InferenceConfig(iou_threshold=-0.1)
 
 
-def test_event_config_rejects_non_positive_sleep_threshold() -> None:
-    with pytest.raises(ValueError, match="sleep_frame_threshold"):
-        EventConfig(sleep_frame_threshold=0)
+def test_event_config_rejects_invalid_unknown_enter_frames() -> None:
+    with pytest.raises(ValueError, match="unknown_enter_frames"):
+        EventConfig(unknown_enter_frames=0)
+
+
+def test_event_config_rejects_invalid_confidence_thresholds() -> None:
+    with pytest.raises(ValueError, match="min_phone_confidence"):
+        EventConfig(min_phone_confidence=1.1)
+
+
+def test_event_config_rejects_invalid_hysteresis_pairs() -> None:
+    with pytest.raises(ValueError, match="phone_exit_frames"):
+        EventConfig(phone_enter_frames=2, phone_exit_frames=3)
 
 
 def test_sender_config_rejects_non_positive_queue_size() -> None:
