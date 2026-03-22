@@ -4,13 +4,20 @@ All tuneable parameters live here so nothing is hard-coded elsewhere.
 """
 
 from dataclasses import dataclass, field
+import os
+from pathlib import Path
 from typing import Literal
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover - optional at runtime
+    yaml = None
 
 
 @dataclass
 class CaptureConfig:
     # "webcam" uses the local camera, "esp32" uses an MJPEG/HTTP stream
-    source: Literal["webcam", "esp32"] = "webcam"
+    source: Literal["webcam", "esp32"] = "esp32"
 
     # Webcam device index (usually 0 for the built-in camera)
     webcam_index: int = 0
@@ -224,3 +231,72 @@ class GatewayConfig:
 # Singleton – import and use this object throughout the project
 # ---------------------------------------------------------------------------
 CONFIG = GatewayConfig()
+
+
+def _load_capture_overrides_from_yaml() -> dict[str, object]:
+    """Read optional capture overrides from config.yml (gateway.capture)."""
+    config_file = Path(__file__).resolve().parents[2] / "config.yml"
+    if not config_file.exists() or yaml is None:
+        return {}
+
+    try:
+        raw = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return {}
+
+    if not isinstance(raw, dict):
+        return {}
+
+    gateway = raw.get("gateway")
+    if not isinstance(gateway, dict):
+        return {}
+
+    capture = gateway.get("capture")
+    if not isinstance(capture, dict):
+        return {}
+
+    allowed = {"source", "webcam_index", "esp32_url", "target_fps"}
+    return {k: v for k, v in capture.items() if k in allowed}
+
+
+def _load_capture_overrides_from_env() -> dict[str, object]:
+    """Read optional capture overrides from environment variables."""
+    out: dict[str, object] = {}
+
+    source = os.getenv("GATEWAY_CAPTURE_SOURCE")
+    if source:
+        out["source"] = source
+
+    webcam_index = os.getenv("GATEWAY_WEBCAM_INDEX")
+    if webcam_index:
+        out["webcam_index"] = int(webcam_index)
+
+    esp32_url = os.getenv("GATEWAY_ESP32_URL")
+    if esp32_url:
+        out["esp32_url"] = esp32_url
+
+    target_fps = os.getenv("GATEWAY_TARGET_FPS")
+    if target_fps:
+        out["target_fps"] = int(target_fps)
+
+    return out
+
+
+def _apply_capture_overrides() -> None:
+    """Apply non-invasive runtime overrides for capture config only."""
+    overrides = {}
+    overrides.update(_load_capture_overrides_from_yaml())
+    overrides.update(_load_capture_overrides_from_env())
+    if not overrides:
+        return
+
+    current = CONFIG.capture
+    CONFIG.capture = CaptureConfig(
+        source=overrides.get("source", current.source),
+        webcam_index=int(overrides.get("webcam_index", current.webcam_index)),
+        esp32_url=str(overrides.get("esp32_url", current.esp32_url)),
+        target_fps=int(overrides.get("target_fps", current.target_fps)),
+    )
+
+
+_apply_capture_overrides()

@@ -12,3 +12,19 @@ debug_server:
   evidence_device_id: debug_server
   evidence_window_seconds: 8
   evidence_trigger_ratio: 1.0
+
+gateway:
+  capture:
+    source: esp32
+    webcam_index: 0
+    esp32_url: http://192.168.1.83:8081/stream
+    target_fps: 5
+
+esp32_simulator:
+  host: 0.0.0.0
+  port: 8081
+  webcam_index: 0
+  width: 640
+  height: 480
+  fps: 12
+  jpeg_quality: 80
