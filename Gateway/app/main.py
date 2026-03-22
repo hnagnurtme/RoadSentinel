@@ -11,7 +11,6 @@ Threading model:
 """
 
 import signal
-import sys
 import time
 
 from app.capture.esp32 import ESP32Capture
@@ -43,6 +42,7 @@ signal.signal(signal.SIGTERM, _handle_signal)
 
 # ── Factory helpers ──────────────────────────────────────────────────────────
 
+
 def _build_capture():
     """Instantiate the correct capture backend based on config."""
     source = CONFIG.capture.source
@@ -56,32 +56,40 @@ def _build_capture():
 
 # ── Main loop ────────────────────────────────────────────────────────────────
 
+
 def main() -> None:
     logger.info("=== Gateway DMS starting ===")
 
-    # 1. Load YOLO model (once)
-    load_model(CONFIG.inference)
-
-    # 2. Build and start capture
-    capture = _build_capture()
-    capture.start()
-
-    # 3. Start WebSocket sender
-    sender = WebSocketSender(CONFIG.sender)
-    sender.start()
-
-    # 4. Build event classifier
-    event_logic = EventLogic(CONFIG.event)
-
-    # Frame timing
-    frame_interval = 1.0 / CONFIG.capture.target_fps
-
-    logger.info(
-        "Main loop running at ~%d FPS. Press Ctrl+C to stop.",
-        CONFIG.capture.target_fps,
-    )
+    capture = None
+    sender = None
+    capture_started = False
+    sender_started = False
 
     try:
+        # 1. Load YOLO model (once)
+        load_model(CONFIG.inference)
+
+        # 2. Build and start capture
+        capture = _build_capture()
+        capture.start()
+        capture_started = True
+
+        # 3. Start WebSocket sender
+        sender = WebSocketSender(CONFIG.sender)
+        sender.start()
+        sender_started = True
+
+        # 4. Build event classifier
+        event_logic = EventLogic(CONFIG.event)
+
+        # Frame timing
+        frame_interval = 1.0 / CONFIG.capture.target_fps
+
+        logger.info(
+            "Main loop running at ~%d FPS. Press Ctrl+C to stop.",
+            CONFIG.capture.target_fps,
+        )
+
         while _running:
             loop_start = time.monotonic()
 
@@ -97,6 +105,7 @@ def main() -> None:
                 processed = preprocess_frame(frame, CONFIG.preprocess)
             except Exception as exc:
                 logger.error("Preprocess error: %s", exc)
+                time.sleep(frame_interval)
                 continue
 
             # ── Inference ────────────────────────────────────────────────────
@@ -104,6 +113,7 @@ def main() -> None:
                 raw_detections = run_inference(processed, CONFIG.inference)
             except Exception as exc:
                 logger.error("Inference error: %s", exc)
+                time.sleep(frame_interval)
                 continue
 
             # ── Postprocess ──────────────────────────────────────────────────
@@ -111,7 +121,9 @@ def main() -> None:
 
             # ── Event classification ─────────────────────────────────────────
             event, confidence = event_logic.classify(detections)
-            logger.info("Event=%s  conf=%.2f  dets=%d", event, confidence, len(detections))
+            logger.info(
+                "Event=%s  conf=%.2f  dets=%d", event, confidence, len(detections)
+            )
 
             # ── Send result to backend ───────────────────────────────────────
             payload = {
@@ -131,10 +143,17 @@ def main() -> None:
         logger.critical("Unhandled exception in main loop: %s", exc, exc_info=True)
     finally:
         logger.info("Shutting down…")
-        capture.stop()
-        sender.stop()
+        if capture_started and capture is not None:
+            try:
+                capture.stop()
+            except Exception as exc:
+                logger.error("Capture stop error: %s", exc)
+        if sender_started and sender is not None:
+            try:
+                sender.stop()
+            except Exception as exc:
+                logger.error("Sender stop error: %s", exc)
         logger.info("=== Gateway DMS stopped ===")
-        sys.exit(0)
 
 
 if __name__ == "__main__":

@@ -31,7 +31,7 @@ class WebSocketSender:
 
     def __init__(self, cfg: SenderConfig) -> None:
         self._cfg = cfg
-        self._queue: queue.Queue[dict] = queue.Queue()
+        self._queue: queue.Queue[dict] = queue.Queue(maxsize=cfg.queue_maxsize)
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -54,7 +54,20 @@ class WebSocketSender:
         Enqueue a payload dict to be sent over the WebSocket.
         Non-blocking; returns immediately.
         """
-        self._queue.put(payload)
+        try:
+            self._queue.put_nowait(payload)
+            return
+        except queue.Full:
+            # Keep recent events by dropping the oldest pending message.
+            try:
+                self._queue.get_nowait()
+            except queue.Empty:
+                pass
+
+        try:
+            self._queue.put_nowait(payload)
+        except queue.Full:
+            logger.warning("WS queue full; dropping payload.")
 
     def stop(self) -> None:
         """Signal the background thread to stop and wait for it to finish."""

@@ -12,3 +12,6 @@ websockets>=12.0
 
 # Typing extras (for Python < 3.12 compatibility with TypedDict)
 typing-extensions>=4.9.0
+
+# Test runner
+pytest>=8.0.0

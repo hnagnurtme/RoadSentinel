@@ -30,8 +30,20 @@ gateway/
 │   └── best.pt             # model YOLOv8
 │
 ├── tests/
-│   └── test_camera.py      # test webcam / ESP32
+│   ├── test_event_logic.py      # test phân loại event
+│   └── test_config_validation.py # test validation config
+│
+├── docs/
+│   └── production-readiness-checklist.md
 │
 ├── requirements.txt
 └── README.md
+
+Run tests:
+
+pytest -q
+
+Production checklist:
+
+docs/production-readiness-checklist.md
 

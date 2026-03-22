@@ -21,6 +21,8 @@ logger = get_logger(__name__)
 _BOUNDARY_MARKER = b"--"
 _JPEG_START = b"\xff\xd8"
 _JPEG_END = b"\xff\xd9"
+_MAX_STREAM_BUFFER_BYTES = 2 * 1024 * 1024
+_BUFFER_TRIM_BYTES = 512 * 1024
 
 
 class ESP32Capture:
@@ -90,6 +92,13 @@ class ESP32Capture:
                     break
 
                 buf += chunk
+
+                if len(buf) > _MAX_STREAM_BUFFER_BYTES:
+                    logger.warning(
+                        "ESP32 stream buffer exceeded %d bytes; trimming.",
+                        _MAX_STREAM_BUFFER_BYTES,
+                    )
+                    buf = buf[-_BUFFER_TRIM_BYTES:]
 
                 # Locate JPEG boundaries
                 start = buf.find(_JPEG_START)
