@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+#IDE
+.vscode
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+
+# IDE / OS
+.DS_Store
+
+# Database files (local dev)
+*.db
+*.sqlite
+*.sqlite3
+
+# Alembic artifacts
+alembic/versions/__pycache__/
+
