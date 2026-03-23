@@ -85,6 +85,7 @@ jobs:
             SSH_PORT="${VPS_SSH_PORT:-22}"
             LOCAL_COMPOSE_FILE="${COMPOSE_SOURCE_FILE:-Backend/docker-compose.yml}"
             REMOTE_COMPOSE_FILE="${DEPLOY_COMPOSE_FILE:-docker-compose.yml}"
+            BACKEND_IMAGE="${DOCKERHUB_USERNAME}/roadsentinel-backend:${CIRCLE_TAG:-latest}"
 
             if [ ! -f "$LOCAL_COMPOSE_FILE" ]; then
               echo "Compose source file not found in CI workspace: $LOCAL_COMPOSE_FILE"
@@ -94,14 +95,14 @@ jobs:
             mkdir -p ~/.ssh
             ssh-keyscan -p "$SSH_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
-            ssh -p "$SSH_PORT" "$VPS_USER@$VPS_HOST" "DEPLOY_PATH='$DEPLOY_PATH' REMOTE_COMPOSE_FILE='$REMOTE_COMPOSE_FILE' bash -lc '
+            ssh -p "$SSH_PORT" "$VPS_USER@$VPS_HOST" "DEPLOY_PATH='$DEPLOY_PATH' REMOTE_COMPOSE_FILE='$REMOTE_COMPOSE_FILE' BACKEND_IMAGE='$BACKEND_IMAGE' bash -lc '
             set -e
             mkdir -p \"\$DEPLOY_PATH\" \"\$(dirname \"\$DEPLOY_PATH/\$REMOTE_COMPOSE_FILE\")\"
             '"
 
             scp -P "$SSH_PORT" "$LOCAL_COMPOSE_FILE" "$VPS_USER@$VPS_HOST:$DEPLOY_PATH/$REMOTE_COMPOSE_FILE"
 
-            ssh -p "$SSH_PORT" "$VPS_USER@$VPS_HOST" "DEPLOY_PATH='$DEPLOY_PATH' REMOTE_COMPOSE_FILE='$REMOTE_COMPOSE_FILE' bash -lc '
+            ssh -p "$SSH_PORT" "$VPS_USER@$VPS_HOST" "DEPLOY_PATH='$DEPLOY_PATH' REMOTE_COMPOSE_FILE='$REMOTE_COMPOSE_FILE' BACKEND_IMAGE='$BACKEND_IMAGE' bash -lc '
             set -e
             export PATH=\"\$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin\"
 
@@ -144,8 +145,8 @@ jobs:
               exit 1
             fi
 
-            \$COMPOSE_CMD -f \"\$REMOTE_COMPOSE_FILE\" pull backend
-            \$COMPOSE_CMD -f \"\$REMOTE_COMPOSE_FILE\" up -d backend
+            BACKEND_IMAGE=\"\$BACKEND_IMAGE\" \$COMPOSE_CMD -f \"\$REMOTE_COMPOSE_FILE\" pull backend
+            BACKEND_IMAGE=\"\$BACKEND_IMAGE\" \$COMPOSE_CMD -f \"\$REMOTE_COMPOSE_FILE\" up -d backend
             '"
 
   preflight_backend_vps:
