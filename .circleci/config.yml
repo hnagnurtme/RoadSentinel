@@ -72,7 +72,7 @@ jobs:
     docker:
       - image: cimg/base:stable
     steps:
-      - add_ssh_keys:
+      - add_ssh_keys
       - run:
           name: Deploy Backend on VPS via SSH
           command: |
@@ -128,7 +128,7 @@ jobs:
     docker:
       - image: cimg/base:stable
     steps:
-      - add_ssh_keys:
+      - add_ssh_keys
       - run:
           name: Preflight VPS readiness checks
           command: |
