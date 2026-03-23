@@ -86,7 +86,112 @@ jobs:
             mkdir -p ~/.ssh
             ssh-keyscan -p "$SSH_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
-            ssh -p "$SSH_PORT" "$VPS_USER@$VPS_HOST" "set -e; cd '$DEPLOY_PATH'; docker compose pull backend; docker compose up -d backend"
+            ssh -p "$SSH_PORT" "$VPS_USER@$VPS_HOST" "DEPLOY_PATH='$DEPLOY_PATH' bash -s" << 'EOF'
+            set -e
+            export PATH="$PATH:/usr/local/bin:/usr/bin:/bin"
+
+            if command -v docker >/dev/null 2>&1; then
+              DOCKER_CMD="docker"
+            elif [ -x /usr/bin/docker ]; then
+              DOCKER_CMD="/usr/bin/docker"
+            elif command -v sudo >/dev/null 2>&1 && sudo -n command -v docker >/dev/null 2>&1; then
+              DOCKER_CMD="sudo docker"
+            elif command -v sudo >/dev/null 2>&1 && [ -x /usr/bin/docker ]; then
+              DOCKER_CMD="sudo /usr/bin/docker"
+            else
+              echo "Docker is not installed or not available in PATH on VPS."
+              echo "Install Docker and ensure deploy user can run it (docker group or passwordless sudo)."
+              exit 1
+            fi
+
+            if $DOCKER_CMD compose version >/dev/null 2>&1; then
+              COMPOSE_CMD="$DOCKER_CMD compose"
+            elif command -v docker-compose >/dev/null 2>&1; then
+              COMPOSE_CMD="docker-compose"
+            elif [ -x /usr/bin/docker-compose ]; then
+              COMPOSE_CMD="/usr/bin/docker-compose"
+            elif command -v sudo >/dev/null 2>&1 && sudo -n command -v docker-compose >/dev/null 2>&1; then
+              COMPOSE_CMD="sudo docker-compose"
+            elif command -v sudo >/dev/null 2>&1 && [ -x /usr/bin/docker-compose ]; then
+              COMPOSE_CMD="sudo /usr/bin/docker-compose"
+            else
+              echo "Docker Compose is not available on VPS (docker compose plugin or docker-compose binary)."
+              exit 1
+            fi
+
+            cd "$DEPLOY_PATH"
+            $COMPOSE_CMD pull backend
+            $COMPOSE_CMD up -d backend
+            EOF
+
+  preflight_backend_vps:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - add_ssh_keys
+      - run:
+          name: Preflight VPS readiness checks
+          command: |
+            if [ -z "$VPS_HOST" ] || [ -z "$VPS_USER" ] || [ -z "$DEPLOY_PATH" ]; then
+              echo "VPS_HOST, VPS_USER, DEPLOY_PATH must be set in CircleCI project settings."
+              exit 1
+            fi
+
+            SSH_PORT="${VPS_SSH_PORT:-22}"
+
+            mkdir -p ~/.ssh
+            ssh-keyscan -p "$SSH_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts
+
+            ssh -p "$SSH_PORT" "$VPS_USER@$VPS_HOST" "DEPLOY_PATH='$DEPLOY_PATH' bash -s" << 'EOF'
+            set -e
+            export PATH="$PATH:/usr/local/bin:/usr/bin:/bin"
+
+            echo "Checking Docker availability..."
+            if command -v docker >/dev/null 2>&1; then
+              DOCKER_CMD="docker"
+            elif [ -x /usr/bin/docker ]; then
+              DOCKER_CMD="/usr/bin/docker"
+            elif command -v sudo >/dev/null 2>&1 && sudo -n command -v docker >/dev/null 2>&1; then
+              DOCKER_CMD="sudo docker"
+            elif command -v sudo >/dev/null 2>&1 && [ -x /usr/bin/docker ]; then
+              DOCKER_CMD="sudo /usr/bin/docker"
+            else
+              echo "Docker is not installed or not available in PATH on VPS."
+              exit 1
+            fi
+            $DOCKER_CMD --version
+
+            echo "Checking Docker Compose availability..."
+            if $DOCKER_CMD compose version >/dev/null 2>&1; then
+              COMPOSE_CMD="$DOCKER_CMD compose"
+            elif command -v docker-compose >/dev/null 2>&1; then
+              COMPOSE_CMD="docker-compose"
+            elif [ -x /usr/bin/docker-compose ]; then
+              COMPOSE_CMD="/usr/bin/docker-compose"
+            elif command -v sudo >/dev/null 2>&1 && sudo -n command -v docker-compose >/dev/null 2>&1; then
+              COMPOSE_CMD="sudo docker-compose"
+            elif command -v sudo >/dev/null 2>&1 && [ -x /usr/bin/docker-compose ]; then
+              COMPOSE_CMD="sudo /usr/bin/docker-compose"
+            else
+              echo "Docker Compose is not available on VPS (docker compose plugin or docker-compose binary)."
+              exit 1
+            fi
+            $COMPOSE_CMD version
+
+            echo "Checking deploy path and compose file..."
+            if [ ! -d "$DEPLOY_PATH" ]; then
+              echo "DEPLOY_PATH does not exist: $DEPLOY_PATH"
+              exit 1
+            fi
+
+            cd "$DEPLOY_PATH"
+            if [ ! -f "docker-compose.yml" ] && [ ! -f "compose.yml" ]; then
+              echo "No compose file found in DEPLOY_PATH (expected docker-compose.yml or compose.yml)."
+              exit 1
+            fi
+
+            echo "VPS preflight checks passed."
+            EOF
 
 workflows:
   ci_cd:
@@ -115,9 +220,17 @@ workflows:
               ignore: /.*/
             tags:
               only: /^v.*/
-      - deploy_backend_vps:
+      - preflight_backend_vps:
           requires:
             - docker_build_and_push_tag
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^v.*/
+      - deploy_backend_vps:
+          requires:
+            - preflight_backend_vps
           filters:
             branches:
               ignore: /.*/
