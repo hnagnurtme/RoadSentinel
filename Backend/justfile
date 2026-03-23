@@ -1,0 +1,27 @@
+# justfile: convenient tasks for development
+
+venv_python := ".venv/bin/python"
+
+setup:
+	if [ ! -x .venv/bin/python ]; then \
+		if command -v python3.13 >/dev/null 2>&1; then python3.13 -m venv .venv; \
+		else python3 -m venv .venv; fi; \
+	fi
+	{{venv_python}} -m pip install -U pip
+	{{venv_python}} -m pip install -r requirements.txt
+
+install:
+	{{venv_python}} -m pip install -r requirements.txt
+
+run:
+	{{venv_python}} -m uvicorn main:app --reload
+
+migrate:
+	{{venv_python}} -m alembic revision --autogenerate -m "init"
+
+upgrade:
+	{{venv_python}} -m alembic upgrade head
+
+init-db:
+	{{venv_python}} -c "from infrastructure.db import session; session.init_db()"
+
