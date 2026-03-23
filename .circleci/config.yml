@@ -1,0 +1,125 @@
+version: 2.1
+
+executors:
+  python-executor:
+    docker:
+      - image: cimg/python:3.13
+
+jobs:
+  backend_ci:
+    executor: python-executor
+    working_directory: ~/project
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - v1-pip-backend-{{ checksum "Backend/requirements.txt" }}
+            - v1-pip-backend-
+      - run:
+          name: Install Backend dependencies
+          command: |
+            python -m pip install --upgrade pip
+            pip install -r Backend/requirements.txt
+      - save_cache:
+          key: v1-pip-backend-{{ checksum "Backend/requirements.txt" }}
+          paths:
+            - ~/.cache/pip
+      - run:
+          name: Static checks and app import
+          command: |
+            python -m compileall Backend
+            cd Backend
+            python -c "from main import app; print(app.title)"
+      - run:
+          name: Run Backend tests (if present)
+          command: |
+            if [ -d Backend/tests ]; then
+              pip install pytest
+              pytest Backend/tests -q
+            else
+              echo "No Backend tests found, skipping."
+            fi
+
+  docker_build_and_push:
+    docker:
+      - image: cimg/base:stable
+    working_directory: ~/project
+    steps:
+      - checkout
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - run:
+          name: Build and push Backend image
+          command: |
+            if [ -z "$DOCKERHUB_USERNAME" ] || [ -z "$DOCKERHUB_PASSWORD" ]; then
+              echo "DOCKERHUB_USERNAME/DOCKERHUB_PASSWORD must be set in CircleCI project settings."
+              exit 1
+            fi
+
+            IMAGE_NAME="$DOCKERHUB_USERNAME/roadsentinel-backend"
+            TAG="${CIRCLE_TAG:-${CIRCLE_SHA1:0:7}}"
+
+            echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+            docker build -f Backend/Dockerfile -t "$IMAGE_NAME:$TAG" Backend
+            docker push "$IMAGE_NAME:$TAG"
+
+            if [ "$CIRCLE_BRANCH" = "main" ]; then
+              docker tag "$IMAGE_NAME:$TAG" "$IMAGE_NAME:latest"
+              docker push "$IMAGE_NAME:latest"
+            fi
+
+  deploy_backend_vps:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - add_ssh_keys
+      - run:
+          name: Deploy Backend on VPS via SSH
+          command: |
+            if [ -z "$VPS_HOST" ] || [ -z "$VPS_USER" ] || [ -z "$DEPLOY_PATH" ]; then
+              echo "VPS_HOST, VPS_USER, DEPLOY_PATH must be set in CircleCI project settings."
+              exit 1
+            fi
+
+            SSH_PORT="${VPS_SSH_PORT:-22}"
+
+            mkdir -p ~/.ssh
+            ssh-keyscan -p "$SSH_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts
+
+            ssh -p "$SSH_PORT" "$VPS_USER@$VPS_HOST" "set -e; cd '$DEPLOY_PATH'; docker compose pull backend; docker compose up -d backend"
+
+workflows:
+  ci_cd:
+    jobs:
+      - backend_ci:
+          filters:
+            branches:
+              only: /.*/
+            tags:
+              only: /.*/
+      - docker_build_and_push:
+          name: docker_build_and_push_main
+          requires:
+            - backend_ci
+          filters:
+            branches:
+              only: main
+            tags:
+              ignore: /.*/
+      - docker_build_and_push:
+          name: docker_build_and_push_tag
+          requires:
+            - backend_ci
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^v.*/
+      - deploy_backend_vps:
+          requires:
+            - docker_build_and_push_tag
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^v.*/
