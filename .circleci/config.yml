@@ -120,8 +120,25 @@ jobs:
             fi
 
             cd \"\$DEPLOY_PATH\"
-            \$COMPOSE_CMD pull backend
-            \$COMPOSE_CMD up -d backend
+
+            COMPOSE_FILE_PATH=\"\${DEPLOY_COMPOSE_FILE:-}\"
+            if [ -z \"\$COMPOSE_FILE_PATH\" ]; then
+              if [ -f \"docker-compose.yml\" ]; then
+                COMPOSE_FILE_PATH=\"docker-compose.yml\"
+              elif [ -f \"compose.yml\" ]; then
+                COMPOSE_FILE_PATH=\"compose.yml\"
+              elif [ -f \"Backend/docker-compose.yml\" ]; then
+                COMPOSE_FILE_PATH=\"Backend/docker-compose.yml\"
+              elif [ -f \"Backend/compose.yml\" ]; then
+                COMPOSE_FILE_PATH=\"Backend/compose.yml\"
+              else
+                echo \"No compose file found. Set DEPLOY_COMPOSE_FILE or add docker-compose.yml/compose.yml in DEPLOY_PATH (or Backend/).\"
+                exit 1
+              fi
+            fi
+
+            \$COMPOSE_CMD -f \"\$COMPOSE_FILE_PATH\" pull backend
+            \$COMPOSE_CMD -f \"\$COMPOSE_FILE_PATH\" up -d backend
             '"
 
   preflight_backend_vps:
@@ -185,10 +202,30 @@ jobs:
             fi
 
             cd \"\$DEPLOY_PATH\"
-            if [ ! -f \"docker-compose.yml\" ] && [ ! -f \"compose.yml\" ]; then
-              echo \"No compose file found in DEPLOY_PATH (expected docker-compose.yml or compose.yml).\"
-              exit 1
+            COMPOSE_FILE_PATH=\"\${DEPLOY_COMPOSE_FILE:-}\"
+            if [ -n \"\$COMPOSE_FILE_PATH\" ]; then
+              if [ ! -f \"\$COMPOSE_FILE_PATH\" ]; then
+                echo \"DEPLOY_COMPOSE_FILE not found: \$COMPOSE_FILE_PATH\"
+                exit 1
+              fi
+            else
+              if [ -f \"docker-compose.yml\" ]; then
+                COMPOSE_FILE_PATH=\"docker-compose.yml\"
+              elif [ -f \"compose.yml\" ]; then
+                COMPOSE_FILE_PATH=\"compose.yml\"
+              elif [ -f \"Backend/docker-compose.yml\" ]; then
+                COMPOSE_FILE_PATH=\"Backend/docker-compose.yml\"
+              elif [ -f \"Backend/compose.yml\" ]; then
+                COMPOSE_FILE_PATH=\"Backend/compose.yml\"
+              else
+                echo \"No compose file found in DEPLOY_PATH.\"
+                echo \"Expected one of: docker-compose.yml, compose.yml, Backend/docker-compose.yml, Backend/compose.yml\"
+                echo \"Or set DEPLOY_COMPOSE_FILE in CircleCI env.\"
+                exit 1
+              fi
             fi
+
+            echo \"Using compose file: \$COMPOSE_FILE_PATH\"
 
             echo \"VPS preflight checks passed.\"
             '"
