@@ -72,6 +72,7 @@ jobs:
     docker:
       - image: cimg/base:stable
     steps:
+      - checkout
       - add_ssh_keys
       - run:
           name: Deploy Backend on VPS via SSH
@@ -82,22 +83,40 @@ jobs:
             fi
 
             SSH_PORT="${VPS_SSH_PORT:-22}"
+            LOCAL_COMPOSE_FILE="${COMPOSE_SOURCE_FILE:-Backend/docker-compose.yml}"
+            REMOTE_COMPOSE_FILE="${DEPLOY_COMPOSE_FILE:-docker-compose.yml}"
+
+            if [ ! -f "$LOCAL_COMPOSE_FILE" ]; then
+              echo "Compose source file not found in CI workspace: $LOCAL_COMPOSE_FILE"
+              exit 1
+            fi
 
             mkdir -p ~/.ssh
             ssh-keyscan -p "$SSH_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
-            ssh -p "$SSH_PORT" "$VPS_USER@$VPS_HOST" "DEPLOY_PATH='$DEPLOY_PATH' bash -lc '
+            ssh -p "$SSH_PORT" "$VPS_USER@$VPS_HOST" "DEPLOY_PATH='$DEPLOY_PATH' REMOTE_COMPOSE_FILE='$REMOTE_COMPOSE_FILE' bash -lc '
             set -e
-            export PATH=\"\$PATH:/usr/local/bin:/usr/bin:/bin\"
+            mkdir -p \"\$DEPLOY_PATH\" \"\$(dirname \"\$DEPLOY_PATH/\$REMOTE_COMPOSE_FILE\")\"
+            '"
+
+            scp -P "$SSH_PORT" "$LOCAL_COMPOSE_FILE" "$VPS_USER@$VPS_HOST:$DEPLOY_PATH/$REMOTE_COMPOSE_FILE"
+
+            ssh -p "$SSH_PORT" "$VPS_USER@$VPS_HOST" "DEPLOY_PATH='$DEPLOY_PATH' REMOTE_COMPOSE_FILE='$REMOTE_COMPOSE_FILE' bash -lc '
+            set -e
+            export PATH=\"\$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin\"
 
             if command -v docker >/dev/null 2>&1; then
               DOCKER_CMD=\"docker\"
             elif [ -x /usr/bin/docker ]; then
               DOCKER_CMD=\"/usr/bin/docker\"
+            elif [ -x /snap/bin/docker ]; then
+              DOCKER_CMD=\"/snap/bin/docker\"
             elif command -v sudo >/dev/null 2>&1 && sudo -n command -v docker >/dev/null 2>&1; then
               DOCKER_CMD=\"sudo docker\"
             elif command -v sudo >/dev/null 2>&1 && [ -x /usr/bin/docker ]; then
               DOCKER_CMD=\"sudo /usr/bin/docker\"
+            elif command -v sudo >/dev/null 2>&1 && [ -x /snap/bin/docker ]; then
+              DOCKER_CMD=\"sudo /snap/bin/docker\"
             else
               echo \"Docker is not installed or not available in PATH on VPS.\"
               echo \"Install Docker and ensure deploy user can run it (docker group or passwordless sudo).\"
@@ -120,31 +139,20 @@ jobs:
             fi
 
             cd \"\$DEPLOY_PATH\"
-
-            COMPOSE_FILE_PATH=\"\${DEPLOY_COMPOSE_FILE:-}\"
-            if [ -z \"\$COMPOSE_FILE_PATH\" ]; then
-              if [ -f \"docker-compose.yml\" ]; then
-                COMPOSE_FILE_PATH=\"docker-compose.yml\"
-              elif [ -f \"compose.yml\" ]; then
-                COMPOSE_FILE_PATH=\"compose.yml\"
-              elif [ -f \"Backend/docker-compose.yml\" ]; then
-                COMPOSE_FILE_PATH=\"Backend/docker-compose.yml\"
-              elif [ -f \"Backend/compose.yml\" ]; then
-                COMPOSE_FILE_PATH=\"Backend/compose.yml\"
-              else
-                echo \"No compose file found. Set DEPLOY_COMPOSE_FILE or add docker-compose.yml/compose.yml in DEPLOY_PATH (or Backend/).\"
-                exit 1
-              fi
+            if [ ! -f \"\$REMOTE_COMPOSE_FILE\" ]; then
+              echo \"Copied compose file not found: \$DEPLOY_PATH/\$REMOTE_COMPOSE_FILE\"
+              exit 1
             fi
 
-            \$COMPOSE_CMD -f \"\$COMPOSE_FILE_PATH\" pull backend
-            \$COMPOSE_CMD -f \"\$COMPOSE_FILE_PATH\" up -d backend
+            \$COMPOSE_CMD -f \"\$REMOTE_COMPOSE_FILE\" pull backend
+            \$COMPOSE_CMD -f \"\$REMOTE_COMPOSE_FILE\" up -d backend
             '"
 
   preflight_backend_vps:
     docker:
       - image: cimg/base:stable
     steps:
+      - checkout
       - add_ssh_keys
       - run:
           name: Preflight VPS readiness checks
@@ -155,23 +163,34 @@ jobs:
             fi
 
             SSH_PORT="${VPS_SSH_PORT:-22}"
+            LOCAL_COMPOSE_FILE="${COMPOSE_SOURCE_FILE:-Backend/docker-compose.yml}"
+            REMOTE_COMPOSE_FILE="${DEPLOY_COMPOSE_FILE:-docker-compose.yml}"
+
+            if [ ! -f "$LOCAL_COMPOSE_FILE" ]; then
+              echo "Compose source file not found in CI workspace: $LOCAL_COMPOSE_FILE"
+              exit 1
+            fi
 
             mkdir -p ~/.ssh
             ssh-keyscan -p "$SSH_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
-            ssh -p "$SSH_PORT" "$VPS_USER@$VPS_HOST" "DEPLOY_PATH='$DEPLOY_PATH' bash -lc '
+            ssh -p "$SSH_PORT" "$VPS_USER@$VPS_HOST" "DEPLOY_PATH='$DEPLOY_PATH' REMOTE_COMPOSE_FILE='$REMOTE_COMPOSE_FILE' bash -lc '
             set -e
-            export PATH=\"\$PATH:/usr/local/bin:/usr/bin:/bin\"
+            export PATH=\"\$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin\"
 
             echo \"Checking Docker availability...\"
             if command -v docker >/dev/null 2>&1; then
               DOCKER_CMD=\"docker\"
             elif [ -x /usr/bin/docker ]; then
               DOCKER_CMD=\"/usr/bin/docker\"
+            elif [ -x /snap/bin/docker ]; then
+              DOCKER_CMD=\"/snap/bin/docker\"
             elif command -v sudo >/dev/null 2>&1 && sudo -n command -v docker >/dev/null 2>&1; then
               DOCKER_CMD=\"sudo docker\"
             elif command -v sudo >/dev/null 2>&1 && [ -x /usr/bin/docker ]; then
               DOCKER_CMD=\"sudo /usr/bin/docker\"
+            elif command -v sudo >/dev/null 2>&1 && [ -x /snap/bin/docker ]; then
+              DOCKER_CMD=\"sudo /snap/bin/docker\"
             else
               echo \"Docker is not installed or not available in PATH on VPS.\"
               exit 1
@@ -202,30 +221,7 @@ jobs:
             fi
 
             cd \"\$DEPLOY_PATH\"
-            COMPOSE_FILE_PATH=\"\${DEPLOY_COMPOSE_FILE:-}\"
-            if [ -n \"\$COMPOSE_FILE_PATH\" ]; then
-              if [ ! -f \"\$COMPOSE_FILE_PATH\" ]; then
-                echo \"DEPLOY_COMPOSE_FILE not found: \$COMPOSE_FILE_PATH\"
-                exit 1
-              fi
-            else
-              if [ -f \"docker-compose.yml\" ]; then
-                COMPOSE_FILE_PATH=\"docker-compose.yml\"
-              elif [ -f \"compose.yml\" ]; then
-                COMPOSE_FILE_PATH=\"compose.yml\"
-              elif [ -f \"Backend/docker-compose.yml\" ]; then
-                COMPOSE_FILE_PATH=\"Backend/docker-compose.yml\"
-              elif [ -f \"Backend/compose.yml\" ]; then
-                COMPOSE_FILE_PATH=\"Backend/compose.yml\"
-              else
-                echo \"No compose file found in DEPLOY_PATH.\"
-                echo \"Expected one of: docker-compose.yml, compose.yml, Backend/docker-compose.yml, Backend/compose.yml\"
-                echo \"Or set DEPLOY_COMPOSE_FILE in CircleCI env.\"
-                exit 1
-              fi
-            fi
-
-            echo \"Using compose file: \$COMPOSE_FILE_PATH\"
+            echo \"Compose file will be uploaded to: \$DEPLOY_PATH/\$REMOTE_COMPOSE_FILE\"
 
             echo \"VPS preflight checks passed.\"
             '"
