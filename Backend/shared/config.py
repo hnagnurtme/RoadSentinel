@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     APP_HOST: str = "127.0.0.1"
     APP_PORT: int = 8000
 
-    DATABASE_URL: str = "sqlite:///./app.db"
+    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/roadsentinel"
     SQL_ECHO: bool = False
 
 

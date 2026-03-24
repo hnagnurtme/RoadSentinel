@@ -6,10 +6,7 @@ from shared.config import settings
 
 DATABASE_URL = settings.DATABASE_URL
 
-# For SQLite, need check_same_thread
 connect_args = {}
-if DATABASE_URL.startswith("sqlite"):
-    connect_args = {"check_same_thread": False}
 
 engine = create_engine(
     DATABASE_URL,
