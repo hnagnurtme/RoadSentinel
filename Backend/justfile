@@ -1,9 +1,10 @@
 # justfile: convenient tasks for development
+set dotenv-load := true
 
-venv_python := ".venv/bin/python"
+venv_python := if env_var_or_default("VIRTUAL_ENV", "") != "" { env_var("VIRTUAL_ENV") + "/bin/python" } else { ".venv/bin/python" }
 
 setup:
-	if [ ! -x .venv/bin/python ]; then \
+	if [ -z "$VIRTUAL_ENV" ] && [ ! -x .venv/bin/python ]; then \
 		if command -v python3.13 >/dev/null 2>&1; then python3.13 -m venv .venv; \
 		else python3 -m venv .venv; fi; \
 	fi
@@ -16,11 +17,84 @@ install:
 run:
 	{{venv_python}} -m uvicorn main:app --reload
 
-migrate:
-	{{venv_python}} -m alembic revision --autogenerate -m "init"
+migrate message="auto":
+	{{venv_python}} -m alembic revision --autogenerate -m "{{message}}"
+
+migrate-empty message="manual":
+	{{venv_python}} -m alembic revision -m "{{message}}"
+
+# Create a revision and auto-fill upgrade/downgrade for PG views in infrastructure.db.models.PG_VIEWS.
+migrate-views message="refresh views":
+	#!/usr/bin/env bash
+	set -euo pipefail
+	{{venv_python}} -m alembic revision -m "{{message}}"
+	{{venv_python}} - <<'PY'
+	import pathlib
+	import re
+
+	versions_dir = pathlib.Path("alembic/versions")
+	latest = max(versions_dir.glob("*.py"), key=lambda p: p.stat().st_mtime)
+	content = latest.read_text(encoding="utf-8")
+
+	if "import sqlalchemy as sa" not in content:
+	    content = content.replace("from alembic import op\n", "from alembic import op\nimport sqlalchemy as sa\n")
+
+	upgrade_block = (
+	    "def upgrade() -> None:\n"
+	    "    from infrastructure.db.models import PG_VIEWS\n\n"
+	    "    for view_def in reversed(PG_VIEWS):\n"
+	    "        op.execute(sa.text(view_def.drop_sql()))\n\n"
+	    "    for view_def in PG_VIEWS:\n"
+	    "        op.execute(sa.text(view_def.create_sql()))\n\n"
+	)
+
+	downgrade_block = (
+	    "def downgrade() -> None:\n"
+	    "    from infrastructure.db.models import PG_VIEWS\n\n"
+	    "    for view_def in reversed(PG_VIEWS):\n"
+	    "        op.execute(sa.text(view_def.drop_sql()))\n\n"
+	    "    for view_def in PG_VIEWS:\n"
+	    "        op.execute(sa.text(view_def.create_sql()))\n\n"
+	)
+
+	content, up_count = re.subn(
+	    r"def upgrade\(\) -> None:\n\s+pass\n",
+	    upgrade_block,
+	    content,
+	    count=1,
+	)
+	content, down_count = re.subn(
+	    r"def downgrade\(\) -> None:\n\s+pass\n",
+	    downgrade_block,
+	    content,
+	    count=1,
+	)
+
+	if up_count != 1 or down_count != 1:
+	    raise SystemExit(f"Unexpected revision template format in {latest}")
+
+	latest.write_text(content, encoding="utf-8")
+	print(f"Updated {latest}")
+	PY
+
+schema schema:
+	{{venv_python}} -m alembic -x schema={{schema}} revision --autogenerate -m "schema {{schema}}"
 
 upgrade:
 	{{venv_python}} -m alembic upgrade head
+
+downgrade rev="-1":
+	{{venv_python}} -m alembic downgrade {{rev}}
+
+current:
+	{{venv_python}} -m alembic current
+
+stamp rev="head":
+	{{venv_python}} -m alembic stamp {{rev}}
+
+repair-migration-state rev="head":
+	{{venv_python}} -m alembic stamp base --purge
+	{{venv_python}} -m alembic stamp {{rev}}
 
 init-db:
 	{{venv_python}} -c "from infrastructure.db import session; session.init_db()"

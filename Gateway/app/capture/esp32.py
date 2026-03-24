@@ -81,32 +81,50 @@ class ESP32Capture:
     def _connect_and_read(self) -> None:
         """Open the HTTP stream and decode JPEG frames until stop is signaled."""
         with requests.get(
-            self._cfg.esp32_url, stream=True, timeout=10
+            self._cfg.esp32_url,
+            stream=True,
+            timeout=(5, 15),
+            headers={"User-Agent": "RoadSentinel-Gateway/1.0", "Accept": "*/*"},
         ) as response:
             response.raise_for_status()
             logger.info("Connected to ESP32-CAM stream.")
-            buf = bytes()
+            buf = bytearray()
 
             for chunk in response.iter_content(chunk_size=4096):
                 if self._stop_event.is_set():
                     break
 
-                buf += chunk
+                if not chunk:
+                    continue
+                buf.extend(chunk)
 
                 if len(buf) > _MAX_STREAM_BUFFER_BYTES:
                     logger.warning(
                         "ESP32 stream buffer exceeded %d bytes; trimming.",
                         _MAX_STREAM_BUFFER_BYTES,
                     )
-                    buf = buf[-_BUFFER_TRIM_BYTES:]
+                    del buf[:-_BUFFER_TRIM_BYTES]
 
-                # Locate JPEG boundaries
-                start = buf.find(_JPEG_START)
-                end = buf.find(_JPEG_END)
+                # Extract as many complete JPEG frames as available.
+                while True:
+                    start = buf.find(_JPEG_START)
+                    if start == -1:
+                        # Keep a small tail in case marker spans chunk boundary.
+                        if len(buf) > 2:
+                            del buf[:-2]
+                        break
 
-                if start != -1 and end != -1 and end > start:
-                    jpg_bytes = buf[start : end + 2]
-                    buf = buf[end + 2 :]  # discard consumed data
+                    if start > 0:
+                        # Drop preamble/truncated bytes before JPEG SOI.
+                        del buf[:start]
+                        start = 0
+
+                    end = buf.find(_JPEG_END, start + 2)
+                    if end == -1:
+                        break
+
+                    jpg_bytes = bytes(buf[start : end + 2])
+                    del buf[: end + 2]  # discard consumed data
 
                     frame = self._decode_jpeg(jpg_bytes)
                     if frame is not None:

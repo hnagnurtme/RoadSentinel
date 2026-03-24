@@ -25,9 +25,10 @@ from typing import Any
 import cv2
 from ultralytics import YOLO
 
+from app.capture.esp32 import ESP32Capture
 from app.evidence.recorder import EvidenceRecorder
 from app.evidence.trigger import SleepWindowTrigger
-from app.utils.config import CONFIG, EvidenceConfig
+from app.utils.config import CONFIG, CaptureConfig, EvidenceConfig
 
 try:
     import yaml
@@ -45,7 +46,7 @@ CONFIG_FILE = ROOT_DIR / "config.yml"
 
 _DEFAULT_CFG: dict[str, Any] = {
     "model_path": "models/best.pt",
-    "webcam_index": 0,
+    "esp32_stream_url": "http://192.168.1.157:81/stream",
     "inference_width": 640,
     "inference_height": 480,
     "confidence_threshold": 0.40,
@@ -82,6 +83,9 @@ def _load_debug_server_cfg() -> dict[str, Any]:
     section = raw.get("debug_server") if isinstance(raw, dict) else None
     if isinstance(section, dict):
         cfg.update(section)
+        # Accept gateway-style key for convenience.
+        if "esp32_stream_url" not in section and "esp32_url" in section:
+            cfg["esp32_stream_url"] = section["esp32_url"]
     elif isinstance(raw, dict):
         # Backward-compatible: allow top-level keys.
         cfg.update({k: v for k, v in raw.items() if k in cfg})
@@ -92,7 +96,7 @@ def _load_debug_server_cfg() -> dict[str, Any]:
 _CFG = _load_debug_server_cfg()
 
 MODEL_PATH = ROOT_DIR / str(_CFG["model_path"])
-WEBCAM_INDEX = int(_CFG["webcam_index"])
+ESP32_STREAM_URL = str(_CFG["esp32_stream_url"])
 INFERENCE_W = int(_CFG["inference_width"])  # inference resolution width
 INFERENCE_H = int(_CFG["inference_height"])  # inference resolution height
 CONF_THRESH = float(_CFG["confidence_threshold"])
@@ -215,15 +219,20 @@ def inference_loop():
     model = YOLO(str(MODEL_PATH))
     log.info("Model loaded. Class names: %s", list(model.names.values()))
 
-    cap = cv2.VideoCapture(WEBCAM_INDEX)
-    if not cap.isOpened():
-        log.error("Cannot open webcam index=%d", WEBCAM_INDEX)
-        sys.exit(1)
-
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, INFERENCE_W)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, INFERENCE_H)
+    capture_cfg = CaptureConfig(
+        source="esp32",
+        webcam_index=0,
+        esp32_url=ESP32_STREAM_URL,
+        target_fps=FPS_LIMIT,
+    )
+    cap = ESP32Capture(capture_cfg)
+    cap.start()
     log.info(
-        "Webcam opened (index=%d) at %dx%d", WEBCAM_INDEX, INFERENCE_W, INFERENCE_H
+        "ESP32 capture started (%s) target=%dfps infer=%dx%d",
+        ESP32_STREAM_URL,
+        FPS_LIMIT,
+        INFERENCE_W,
+        INFERENCE_H,
     )
 
     frame_id = 0
@@ -255,11 +264,16 @@ def inference_loop():
     )
 
     while True:
-        ret, frame = cap.read()
-        if not ret:
-            log.warning("Frame grab failed – retrying…")
+        frame = cap.read(timeout=2.0)
+        if frame is None:
+            log.warning("No frame from ESP32 stream – waiting for next frame…")
             time.sleep(0.1)
             continue
+
+        if frame.shape[1] != INFERENCE_W or frame.shape[0] != INFERENCE_H:
+            frame = cv2.resize(
+                frame, (INFERENCE_W, INFERENCE_H), interpolation=cv2.INTER_AREA
+            )
 
         now = time.monotonic()
         elapsed = now - t_last
@@ -510,6 +524,7 @@ if __name__ == "__main__":
     log.info("=" * 55)
     log.info("  RoadSentinel YOLO Debug Server")
     log.info("  Model : %s", MODEL_PATH)
+    log.info("  Input : %s", ESP32_STREAM_URL)
     log.info("  HTTP  : http://localhost:%d/stream  (MJPEG)", HTTP_PORT)
     log.info("  WS    : ws://localhost:%d            (JSON detections)", WS_PORT)
     log.info("=" * 55)

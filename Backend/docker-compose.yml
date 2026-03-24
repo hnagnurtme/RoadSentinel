@@ -5,13 +5,15 @@ services:
       context: .
       dockerfile: Dockerfile
     image: ${BACKEND_IMAGE:-roadsentinel-backend:local}
+    env_file:
+      - .env
     ports:
       - "8000:8000"
     environment:
       APP_ENV: development
       APP_HOST: 0.0.0.0
       APP_PORT: 8000
-      DATABASE_URL: sqlite:////app/data/app.db
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       SQL_ECHO: "false"
     volumes:
       - backend_data:/app/data
