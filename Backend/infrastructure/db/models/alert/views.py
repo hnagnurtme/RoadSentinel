@@ -8,6 +8,13 @@ class AlertOverviewView(PGView):
     SELECT
         a.id,
         a.message,
+        a.alert_type,
+        a.evidence_url,
+        a.device_id,
+        a.driver_id,
+        a.vehicle_id,
+        a.latitude,
+        a.longitude,
         length(a.message) AS message_length,
         a.created_at,
         a.updated_at,
