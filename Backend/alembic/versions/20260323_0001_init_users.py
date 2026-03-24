@@ -18,18 +18,29 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "users",
-        sa.Column("id", sa.Integer(), primary_key=True, nullable=False),
-        sa.Column("email", sa.String(), nullable=False),
-        sa.Column("name", sa.String(), nullable=True),
-        sa.Column("created_at", sa.DateTime(), nullable=True),
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    public_tables = set(inspector.get_table_names(schema="public"))
+
+    if "users" not in public_tables:
+        op.create_table(
+            "users",
+            sa.Column("id", sa.Integer(), primary_key=True, nullable=False),
+            sa.Column("email", sa.String(), nullable=False),
+            sa.Column("name", sa.String(), nullable=True),
+            sa.Column("created_at", sa.DateTime(), nullable=True),
+        )
+
+    # Keep migration safe on databases where table/indexes already exist.
+    op.execute(sa.text("CREATE INDEX IF NOT EXISTS ix_users_id ON public.users (id)"))
+    op.execute(
+        sa.text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_email ON public.users (email)"
+        )
     )
-    op.create_index("ix_users_id", "users", ["id"], unique=False)
-    op.create_index("ix_users_email", "users", ["email"], unique=True)
 
 
 def downgrade() -> None:
-    op.drop_index("ix_users_email", table_name="users")
-    op.drop_index("ix_users_id", table_name="users")
-    op.drop_table("users")
+    op.execute(sa.text("DROP INDEX IF EXISTS public.ix_users_email"))
+    op.execute(sa.text("DROP INDEX IF EXISTS public.ix_users_id"))
+    op.execute(sa.text("DROP TABLE IF EXISTS public.users"))

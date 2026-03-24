@@ -1,9 +1,10 @@
 # justfile: convenient tasks for development
+set dotenv-load := true
 
-venv_python := ".venv/bin/python"
+venv_python := if env_var_or_default("VIRTUAL_ENV", "") != "" { env_var("VIRTUAL_ENV") + "/bin/python" } else { ".venv/bin/python" }
 
 setup:
-	if [ ! -x .venv/bin/python ]; then \
+	if [ -z "$VIRTUAL_ENV" ] && [ ! -x .venv/bin/python ]; then \
 		if command -v python3.13 >/dev/null 2>&1; then python3.13 -m venv .venv; \
 		else python3 -m venv .venv; fi; \
 	fi
@@ -19,8 +20,14 @@ run:
 migrate:
 	{{venv_python}} -m alembic revision --autogenerate -m "init"
 
+schema schema:
+	{{venv_python}} -m alembic -x schema={{schema}} revision --autogenerate -m "schema {{schema}}"
+
 upgrade:
 	{{venv_python}} -m alembic upgrade head
+
+upgrade-user-schema:
+	{{venv_python}} -m alembic upgrade 20260324_0002
 
 init-db:
 	{{venv_python}} -c "from infrastructure.db import session; session.init_db()"

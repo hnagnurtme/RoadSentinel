@@ -1,6 +1,6 @@
 debug_server:
   model_path: models/best.pt
-  webcam_index: 0
+  esp32_stream_url: http://192.168.1.157:81/stream
   inference_width: 640
   inference_height: 480
   confidence_threshold: 0.40
@@ -17,7 +17,7 @@ gateway:
   capture:
     source: esp32
     webcam_index: 0
-    esp32_url: http://192.168.1.83:8081/stream
+    esp32_url: http://192.168.1.157:81/stream
     target_fps: 5
 
 esp32_simulator:
