@@ -3,6 +3,8 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from application.user.user_dto import UserResponse
+from application.vehicle.vehicle_dto import VehicleResponse
 from domain.alert.value_objects import AlertType
 
 
@@ -29,6 +31,8 @@ class AlertResponse(BaseModel):
     evidence_url: str | None = None
     latitude: float | None = None
     longitude: float | None = None
+    user: UserResponse | None = None
+    vehicle: VehicleResponse | None = None
     created_at: datetime | None = Field(default=None, serialization_alias="_created_at")
     updated_at: datetime | None = Field(default=None, serialization_alias="_updated_at")
     deleted_at: datetime | None = Field(default=None, serialization_alias="_deleted_at")

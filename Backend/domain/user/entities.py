@@ -10,6 +10,7 @@ from domain.user.value_objects import EmailAddress
 class UserEntity:
     email: EmailAddress
     name: str | None = None
+    avatar_image_url: str | None = None
     name__family: str | None = None
     name__given: str | None = None
     name__middle: str | None = None

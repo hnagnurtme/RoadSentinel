@@ -19,6 +19,7 @@ class CreateVehicleHandler:
             plate_number=command.plate_number.strip().upper(),
             manufacturer=command.manufacturer,
             model=command.model,
+            vehicle_image_url=command.vehicle_image_url,
             color=command.color,
             production_year=command.production_year,
             vin=command.vin,

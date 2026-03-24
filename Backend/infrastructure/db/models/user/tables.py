@@ -12,6 +12,7 @@ class User(DataModel):
 
     email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    avatar_image_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     name__family: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     name__given: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     name__middle: Mapped[Optional[str]] = mapped_column(String, nullable=True)

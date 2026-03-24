@@ -1,4 +1,5 @@
 from fastapi import APIRouter, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from infrastructure.db.session import init_db
 from interfaces.api.middleware.exception import register_exception_handlers
@@ -10,6 +11,13 @@ from shared.config import settings
 
 
 app = FastAPI(title=settings.APP_NAME)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ALLOW_ORIGINS,
+    allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
+    allow_methods=settings.CORS_ALLOW_METHODS,
+    allow_headers=settings.CORS_ALLOW_HEADERS,
+)
 register_exception_handlers(app)
 
 api_v1_router = APIRouter(prefix="/api/v1")

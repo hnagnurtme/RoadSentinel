@@ -17,6 +17,7 @@ class CreateUserHandler:
         user = UserEntity(
             email=email,
             name=command.name,
+            avatar_image_url=command.avatar_image_url,
             name__family=command.name__family,
             name__given=command.name__given,
             name__middle=command.name__middle,

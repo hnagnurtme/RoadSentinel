@@ -17,6 +17,7 @@ def _to_user_response(user) -> UserResponse:
         id=user._id,
         email=user.email.value,
         name=user.name,
+        avatar_image_url=user.avatar_image_url,
         name__family=user.name__family,
         name__given=user.name__given,
         name__middle=user.name__middle,
@@ -43,6 +44,7 @@ def create_user(
         CreateUserCommand(
             email=payload.email,
             name=payload.name,
+            avatar_image_url=payload.avatar_image_url,
             name__family=payload.name__family,
             name__given=payload.name__given,
             name__middle=payload.name__middle,

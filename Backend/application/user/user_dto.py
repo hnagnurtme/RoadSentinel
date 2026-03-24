@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class CreateUserRequest(BaseModel):
     email: str
     name: str | None = None
+    avatar_image_url: str | None = None
     name__family: str | None = None
     name__given: str | None = None
     name__middle: str | None = None
@@ -27,6 +28,7 @@ class UserResponse(BaseModel):
     id: uuid.UUID = Field(serialization_alias="_id", validation_alias="_id")
     email: str
     name: str | None = None
+    avatar_image_url: str | None = None
     name__family: str | None = None
     name__given: str | None = None
     name__middle: str | None = None

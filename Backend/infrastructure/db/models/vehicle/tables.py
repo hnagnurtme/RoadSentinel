@@ -15,6 +15,7 @@ class Vehicle(DataModel):
     )
     manufacturer: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     model: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    vehicle_image_url: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     color: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     production_year: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     vin: Mapped[Optional[str]] = mapped_column(String, nullable=True, unique=True)

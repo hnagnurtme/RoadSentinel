@@ -14,6 +14,10 @@ APP_HOST=127.0.0.1
 APP_PORT=8000
 DATABASE_URL=postgresql://<user>:<password>@<host>:<port>/<db>?sslmode=require
 SQL_ECHO=false
+CORS_ALLOW_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+CORS_ALLOW_CREDENTIALS=true
+CORS_ALLOW_METHODS=*
+CORS_ALLOW_HEADERS=*
 ```
 
 1. Create virtualenv and install deps:
