@@ -5,6 +5,7 @@ from interfaces.api.middleware.exception import register_exception_handlers
 from interfaces.api.v1.alert import router as alert_router
 from interfaces.api.v1.user import router as user_router
 from interfaces.api.v1.vehicle import router as vehicle_router
+from interfaces.api.v1.websocket import router as websocket_router
 from shared.config import settings
 
 
@@ -15,6 +16,7 @@ api_v1_router = APIRouter(prefix="/api/v1")
 api_v1_router.include_router(user_router)
 api_v1_router.include_router(alert_router)
 api_v1_router.include_router(vehicle_router)
+api_v1_router.include_router(websocket_router)
 app.include_router(api_v1_router)
 
 

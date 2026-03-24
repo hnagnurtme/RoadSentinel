@@ -14,6 +14,7 @@ from interfaces.api.deps import (
     get_list_alerts_handler,
 )
 from interfaces.api.response import success_response
+from interfaces.api.v1.websocket import alerts_ws_manager
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -36,7 +37,7 @@ def _to_alert_response(alert) -> AlertResponse:
 
 
 @router.post("")
-def create_alert(
+async def create_alert(
     payload: CreateAlertRequest,
     handler: CreateAlertHandler = Depends(get_create_alert_handler),
 ):
@@ -52,7 +53,14 @@ def create_alert(
             longitude=payload.longitude,
         )
     )
-    return success_response(data=_to_alert_response(alert).model_dump(by_alias=True))
+    data = _to_alert_response(alert).model_dump(by_alias=True)
+    await alerts_ws_manager.broadcast(
+        {
+            "event": "alert.created",
+            "data": data,
+        }
+    )
+    return success_response(data=data)
 
 
 @router.get("/{alert_id}")
