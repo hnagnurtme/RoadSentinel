@@ -42,6 +42,8 @@ migrate-views message="refresh views":
 	upgrade_block = (
 	    "def upgrade() -> None:\n"
 	    "    from infrastructure.db.models import PG_VIEWS\n\n"
+	    "    for view_def in reversed(PG_VIEWS):\n"
+	    "        op.execute(sa.text(view_def.drop_sql()))\n\n"
 	    "    for view_def in PG_VIEWS:\n"
 	    "        op.execute(sa.text(view_def.create_sql()))\n\n"
 	)
@@ -51,6 +53,8 @@ migrate-views message="refresh views":
 	    "    from infrastructure.db.models import PG_VIEWS\n\n"
 	    "    for view_def in reversed(PG_VIEWS):\n"
 	    "        op.execute(sa.text(view_def.drop_sql()))\n\n"
+	    "    for view_def in PG_VIEWS:\n"
+	    "        op.execute(sa.text(view_def.create_sql()))\n\n"
 	)
 
 	content, up_count = re.subn(

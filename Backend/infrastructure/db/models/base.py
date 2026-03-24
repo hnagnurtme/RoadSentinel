@@ -1,6 +1,9 @@
 from datetime import datetime
+import uuid
 
 from sqlalchemy import DateTime, MetaData
+from sqlalchemy import text
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, declarative_base, mapped_column
 
 
@@ -8,20 +11,24 @@ metadata = MetaData()
 Base = declarative_base(metadata=metadata)
 
 
-class BaseModel:
+class DataModel(Base):
     """Common timestamp and soft-delete columns for all persisted models."""
 
     __abstract__ = True
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
+    _id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        index=True,
+        default=uuid.uuid4,
+        server_default=text("gen_random_uuid()"),
+    )
+
+    _created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    _updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
-    deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-
-
-class DataModel(Base, BaseModel):
-    __abstract__ = True
+    _deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class PGView:

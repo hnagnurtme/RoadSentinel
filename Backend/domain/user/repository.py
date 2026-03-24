@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import uuid
 
 from domain.user.entities import UserEntity
 
@@ -9,7 +10,7 @@ class UserRepository(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def get_by_id(self, user_id: int) -> UserEntity | None:
+    def get_by_id(self, user_id: uuid.UUID) -> UserEntity | None:
         raise NotImplementedError
 
     @abstractmethod

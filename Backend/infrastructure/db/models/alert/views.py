@@ -6,7 +6,7 @@ class AlertOverviewView(PGView):
     name = "_alert_overview"
     query = """
     SELECT
-        a.id,
+        a._id,
         a.message,
         a.alert_type,
         a.evidence_url,
@@ -16,8 +16,8 @@ class AlertOverviewView(PGView):
         a.latitude,
         a.longitude,
         length(a.message) AS message_length,
-        a.created_at,
-        a.updated_at,
-        a.deleted_at
+        a._created_at,
+        a._updated_at,
+        a._deleted_at
     FROM "alert".alert a
     """

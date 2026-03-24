@@ -6,7 +6,7 @@ class UserOverviewView(PGView):
     name = "_user_overview"
     query = """
     SELECT
-        u.id,
+        u._id,
         u.email,
         u.name,
         u.name__family,
@@ -20,8 +20,8 @@ class UserOverviewView(PGView):
         u.address__country,
         u.address__line1,
         u.address__line2,
-        u.created_at,
-        u.updated_at,
-        u.deleted_at
+        u._created_at,
+        u._updated_at,
+        u._deleted_at
     FROM "user"."user" u
     """

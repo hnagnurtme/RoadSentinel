@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Optional
 
 from sqlalchemy import Enum as SAEnum
-from sqlalchemy import Float, String, text
+from sqlalchemy import Float, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,13 +20,6 @@ class Alert(DataModel):
     __tablename__ = "alert"
     __table_args__ = {"schema": "alert"}
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        index=True,
-        default=uuid.uuid4,
-        server_default=text("gen_random_uuid()"),
-    )
     message: Mapped[str] = mapped_column(String, nullable=False)
     alert_type: Mapped[AlertType] = mapped_column(
         SAEnum(AlertType, name="alert_type_enum", schema="alert"),
