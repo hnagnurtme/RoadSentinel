@@ -20,7 +20,7 @@ from app.evidence.trigger import SleepWindowTrigger
 from app.event.logic import EventLogic
 from app.inference.detect import run_inference
 from app.inference.model import load_model
-from app.processing.postprocess import filter_detections
+from app.processing.postprocess import annotate_frame, filter_detections
 from app.processing.preprocess import preprocess_frame
 from app.sender.websocket import WebSocketSender
 from app.utils.config import CONFIG
@@ -94,14 +94,13 @@ def main() -> None:
         sleep_trigger = SleepWindowTrigger(
             fps=CONFIG.capture.target_fps,
             window_seconds=CONFIG.evidence.sleep_evidence_seconds,
-            occupancy_threshold=CONFIG.evidence.sleep_trigger_ratio,
+            occupancy_threshold=1.0,
         )
-        sleep_labels = {label.lower() for label in CONFIG.event.sleep_labels}
-        presence_labels = {label.lower() for label in CONFIG.event.presence_labels}
-        eyes_open_labels = {"eyes open", "eye"}
-        min_sleep_conf = CONFIG.event.min_sleep_confidence
-        min_presence_conf = CONFIG.evidence.min_presence_confidence
-        min_eyes_open_conf = CONFIG.evidence.min_eyes_open_confidence
+        violation_events = set(CONFIG.event.event_priority)
+        sleeping_release_grace_seconds = 1.0
+        last_sleeping_seen_at: float | None = None
+        last_sleeping_confidence = 0.0
+        was_sleeping_event = False
 
         # Frame timing
         frame_interval = 1.0 / CONFIG.capture.target_fps
@@ -128,8 +127,6 @@ def main() -> None:
                 time.sleep(frame_interval)
                 continue
 
-            evidence.push_frame(frame)
-
             # ── Preprocess ───────────────────────────────────────────────────
             try:
                 processed = preprocess_frame(frame, CONFIG.preprocess)
@@ -150,29 +147,54 @@ def main() -> None:
             detections = filter_detections(raw_detections)
 
             # ── Event classification ─────────────────────────────────────────
-            event, confidence = event_logic.classify(detections)
+            raw_event, raw_confidence = event_logic.classify(detections)
+            now_monotonic = time.monotonic()
+
+            if raw_event == "sleeping":
+                last_sleeping_seen_at = now_monotonic
+                last_sleeping_confidence = raw_confidence
+                event = raw_event
+                confidence = raw_confidence
+            elif (
+                last_sleeping_seen_at is not None
+                and (now_monotonic - last_sleeping_seen_at)
+                < sleeping_release_grace_seconds
+            ):
+                # Hold sleeping briefly to avoid close-open-close flicker.
+                event = "sleeping"
+                confidence = max(raw_confidence, last_sleeping_confidence)
+            else:
+                event = raw_event
+                confidence = raw_confidence
+
             logger.info(
                 "Event=%s  conf=%.2f  dets=%d", event, confidence, len(detections)
             )
 
-            sleep_evidence_present = any(
-                det["label"].lower() in sleep_labels
-                and det["confidence"] >= min_sleep_conf
-                for det in detections
+            # Evidence clips should keep the same visual labels users see.
+            proc_h, proc_w = processed.shape[:2]
+            raw_h, raw_w = frame.shape[:2]
+            scale_x = raw_w / proc_w if proc_w else 1.0
+            scale_y = raw_h / proc_h if proc_h else 1.0
+            annotated = annotate_frame(
+                frame,
+                detections,
+                event,
+                scale_x=scale_x,
+                scale_y=scale_y,
             )
 
-            if CONFIG.evidence.use_sleep_proxy and not sleep_evidence_present:
-                has_presence = any(
-                    det["label"].lower() in presence_labels
-                    and det["confidence"] >= min_presence_conf
-                    for det in detections
-                )
-                has_eyes_open = any(
-                    det["label"].lower() in eyes_open_labels
-                    and det["confidence"] >= min_eyes_open_conf
-                    for det in detections
-                )
-                sleep_evidence_present = has_presence and (not has_eyes_open)
+            is_sleeping_event = event == "sleeping"
+            if is_sleeping_event:
+                if not was_sleeping_event:
+                    evidence.reset_buffer()
+                evidence.push_frame(annotated)
+            elif was_sleeping_event:
+                # Sleeping broke before reaching full window: discard partial clip.
+                evidence.reset_buffer()
+
+            # Strict policy: require a full continuous sleeping window (8s).
+            sleep_evidence_present = is_sleeping_event
 
             should_save = sleep_trigger.update(sleep_evidence_present)
             if should_save:
@@ -180,13 +202,16 @@ def main() -> None:
                 if saved is not None:
                     logger.warning("Evidence written to %s", saved)
 
-            # ── Send result to backend ───────────────────────────────────────
-            payload = {
-                "device_id": CONFIG.sender.device_id,
-                "event": event,
-                "confidence": round(confidence, 4),
-            }
-            sender.send(payload)
+            was_sleeping_event = is_sleeping_event
+
+            # ── Realtime event stream: send active violations immediately ─────
+            if event in violation_events:
+                payload = {
+                    "device_id": CONFIG.sender.device_id,
+                    "event": event,
+                    "confidence": round(confidence, 4),
+                }
+                sender.send(payload)
 
             # ── FPS throttle ─────────────────────────────────────────────────
             elapsed = time.monotonic() - loop_start

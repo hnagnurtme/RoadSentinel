@@ -35,10 +35,23 @@ class EventLogic:
             "using_phone": 0,
             "distracted": 0,
         }
+        self._event_miss_streaks: dict[str, int] = {
+            "sleeping": 0,
+            "using_phone": 0,
+            "distracted": 0,
+        }
         self._event_active: dict[str, bool] = {
             "sleeping": False,
             "using_phone": False,
             "distracted": False,
+        }
+
+        # Sleeping labels often flicker (close-open-close), so we require two
+        # consecutive missing-evidence frames before decreasing sleeping score.
+        self._decay_miss_frames = {
+            "sleeping": 2,
+            "using_phone": 1,
+            "distracted": 1,
         }
 
         self._enter_thresholds = {
@@ -84,8 +97,13 @@ class EventLogic:
 
         if has_evidence:
             score = min(enter, score + 1)
+            self._event_miss_streaks[event] = 0
         else:
-            score = max(0, score - 1)
+            miss_streak = self._event_miss_streaks[event] + 1
+            self._event_miss_streaks[event] = miss_streak
+            if miss_streak >= self._decay_miss_frames[event]:
+                score = max(0, score - 1)
+                self._event_miss_streaks[event] = 0
 
         active = self._event_active[event]
         if active and score < exit_:
@@ -110,6 +128,14 @@ class EventLogic:
         """
         label_conf = self._max_conf_by_label(detections)
 
+        explicit_sleeping_conf = max(
+            label_conf.get("sleeping", 0.0),
+            label_conf.get("eyes closed", 0.0),
+        )
+        has_explicit_sleeping = (
+            explicit_sleeping_conf >= self._confidence_thresholds["sleeping"]
+        )
+
         # Observation quality tracking: no presence -> unknown after threshold.
         has_presence = any(label in self._presence_labels for label in label_conf)
         if has_presence:
@@ -131,6 +157,15 @@ class EventLogic:
             has_evidence = evidence_conf >= self._confidence_thresholds[event]
             self._update_event_state(event, has_evidence)
 
+        if has_explicit_sleeping:
+            self._event_scores["sleeping"] = self._enter_thresholds["sleeping"]
+            self._event_miss_streaks["sleeping"] = 0
+            self._event_active["sleeping"] = True
+            logger.info(
+                "Event: sleeping (explicit label, conf=%.2f)", explicit_sleeping_conf
+            )
+            return "sleeping", explicit_sleeping_conf
+
         for event in self._cfg.event_priority:
             if self._event_active.get(event, False):
                 conf = event_confidence.get(event, 0.0)
@@ -151,4 +186,5 @@ class EventLogic:
         self._no_presence_counter = 0
         for event in self._event_scores:
             self._event_scores[event] = 0
+            self._event_miss_streaks[event] = 0
             self._event_active[event] = False

@@ -23,7 +23,7 @@ class CaptureConfig:
     webcam_index: int = 0
 
     # Full URL to the ESP32-CAM MJPEG stream
-    esp32_url: str = "http://192.168.1.100/stream"
+    esp32_url: str = "http://172.31.98.91:81/stream"
 
     # Target frames-per-second for the main capture loop
     target_fps: int = 5
@@ -97,13 +97,13 @@ class EventConfig:
     )
 
     # Minimum confidence required to treat a label as evidence.
-    min_sleep_confidence: float = 0.6
+    min_sleep_confidence: float = 0.5
     min_phone_confidence: float = 0.6
     min_distracted_confidence: float = 0.6
 
     # Hysteresis thresholds: enter must be higher than exit to avoid flicker.
-    sleep_enter_frames: int = 6
-    sleep_exit_frames: int = 3
+    sleep_enter_frames: int = 3
+    sleep_exit_frames: int = 1
     phone_enter_frames: int = 3
     phone_exit_frames: int = 1
     distracted_enter_frames: int = 4

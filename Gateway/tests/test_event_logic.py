@@ -37,7 +37,7 @@ def test_phone_has_highest_priority() -> None:
     assert conf == 0.88
 
 
-def test_sleeping_requires_direct_sleep_evidence() -> None:
+def test_sleeping_explicit_label_triggers_immediately() -> None:
     logic = EventLogic(
         EventConfig(
             sleep_enter_frames=2,
@@ -47,7 +47,6 @@ def test_sleeping_requires_direct_sleep_evidence() -> None:
         )
     )
 
-    assert logic.classify([_det("sleeping", 0.6)])[0] == "normal"
     event, conf = logic.classify([_det("sleeping", 0.7)])
 
     assert event == "sleeping"
@@ -104,3 +103,34 @@ def test_phone_labels_include_mobile_alias() -> None:
     event, _ = logic.classify([_det("mobile", 0.75)])
 
     assert event == "using_phone"
+
+
+def test_sleeping_tolerates_close_open_flicker() -> None:
+    logic = EventLogic(
+        EventConfig(
+            sleep_enter_frames=3,
+            sleep_exit_frames=1,
+            min_sleep_confidence=0.5,
+        )
+    )
+
+    assert logic.classify([_det("eyes closed", 0.8)])[0] == "sleeping"
+    assert logic.classify([_det("eyes open", 0.9)])[0] == "sleeping"
+
+    event, conf = logic.classify([_det("eyes closed", 0.85)])
+    assert event == "sleeping"
+    assert conf == 0.85
+
+
+def test_eyes_closed_triggers_sleeping_immediately() -> None:
+    logic = EventLogic(
+        EventConfig(
+            sleep_enter_frames=3,
+            sleep_exit_frames=1,
+            min_sleep_confidence=0.5,
+        )
+    )
+
+    event, conf = logic.classify([_det("eyes closed", 0.72)])
+    assert event == "sleeping"
+    assert conf == 0.72
