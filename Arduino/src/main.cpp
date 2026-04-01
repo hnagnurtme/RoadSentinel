@@ -1,17 +1,24 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_camera.h>
-#include <esp_http_server.h>
+#include <WebSocketsClient.h>   // arduinoWebSockets by Links2004
 
-// -----------------------------
-// Wi-Fi credentials
-// -----------------------------
-static const char* WIFI_SSID = "ITF Da Nang";
-static const char* WIFI_PASS = "itfdanang";
+// ─── Wi-Fi credentials ────────────────────────────────────────────────────────
+static const char* WIFI_SSID = "37 Ngo Van So";
+static const char* WIFI_PASS = "987654321";
 
-// -----------------------------
-// AI Thinker ESP32-CAM pins
-// -----------------------------
+// ─── FastAPI VPS ──────────────────────────────────────────────────────────────
+// Đổi thành IP/domain VPS của bạn và port FastAPI
+static const char*    WS_HOST = "192.168.1.32";
+static const uint16_t WS_PORT = 8000;
+static const char*    WS_PATH = "/ws/camera";   // endpoint WebSocket trên FastAPI
+
+// ─── Tuning ───────────────────────────────────────────────────────────────────
+static const framesize_t FRAME_SIZE    = FRAMESIZE_QVGA;
+static const int         JPEG_QUALITY  = 12;           // 0=best, 63=worst
+static const uint32_t    FRAME_INTERVAL_MS = 80;       // ~12.5 fps
+
+// ─── AI Thinker ESP32-CAM pins ───────────────────────────────────────────────
 #define PWDN_GPIO_NUM     32
 #define RESET_GPIO_NUM    -1
 #define XCLK_GPIO_NUM      0
@@ -29,97 +36,117 @@ static const char* WIFI_PASS = "itfdanang";
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
 
-static httpd_handle_t camera_httpd = nullptr;
-static httpd_handle_t stream_httpd = nullptr;
+// ─── Globals ──────────────────────────────────────────────────────────────────
+static WebSocketsClient ws;
+static bool             ws_connected = false;
+static uint32_t         last_frame_ms = 0;
+static uint32_t         frame_count   = 0;
+static uint32_t         reconnect_count = 0;
 
-static const framesize_t STREAM_FRAME_SIZE = FRAMESIZE_VGA;
-static const int STREAM_JPEG_QUALITY = 10;
+void handleServerCommand(uint8_t* payload, size_t length);
 
-// ─── Index page ───────────────────────────────────────────────────────────────
-static esp_err_t index_handler(httpd_req_t* req) {
-    static const char page[] =
-        "<!doctype html><html><head><meta charset='utf-8'>"
-        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<title>ESP32-CAM LAN</title>"
-        "<style>"
-        "body{margin:0;background:#10151b;color:#e7eef7;font-family:Verdana,sans-serif;}"
-        ".wrap{max-width:960px;margin:16px auto;padding:0 12px;}"
-        "h1{font-size:18px;margin:0 0 10px;}"
-        "img{width:100%;border-radius:12px;border:1px solid #263241;background:#000;}"
-        "button{margin-top:10px;padding:8px 12px;border:0;border-radius:8px;"
-        "background:#2f81f7;color:#fff;cursor:pointer;}"
-        "</style></head><body><div class='wrap'>"
-        "<h1>ESP32-CAM LAN Stream</h1>"
-        "<img id='stream' alt='stream'>"
-        "<br><button onclick='window.open(\"/jpg\",\"_blank\")'>Capture JPG</button>"
-        "</div><script>"
-        "document.getElementById('stream').src='http://'+location.hostname+':81/stream';"
-        "</script></body></html>";
+// ─── WebSocket event handler ──────────────────────────────────────────────────
+void onWebSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
+    switch (type) {
+        case WStype_CONNECTED:
+            ws_connected = true;
+            Serial.printf("[WS] Connected to %s:%d%s\n", WS_HOST, WS_PORT, WS_PATH);
+            // Gửi hello JSON để FastAPI nhận diện nguồn
+            ws.sendTXT("{\"type\":\"hello\",\"device\":\"esp32-cam\"}");
+            break;
 
-    httpd_resp_set_type(req, "text/html");
-    return httpd_resp_send(req, page, HTTPD_RESP_USE_STRLEN);
-}
+        case WStype_DISCONNECTED:
+            ws_connected = false;
+            reconnect_count++;
+            Serial.printf("[WS] Disconnected (reconnect #%u)\n", reconnect_count);
+            break;
 
-// ─── Single JPEG capture ──────────────────────────────────────────────────────
-static esp_err_t jpg_handler(httpd_req_t* req) {
-    camera_fb_t* fb = esp_camera_fb_get();
-    if (!fb) return httpd_resp_send_500(req);
+        case WStype_TEXT:
+            // FastAPI có thể gửi lệnh điều khiển dạng JSON
+            // Ví dụ: {"cmd":"set_quality","value":8} hoặc {"cmd":"set_fps","value":15}
+            Serial.printf("[WS] Server msg: %s\n", (char*)payload);
+            handleServerCommand(payload, length);
+            break;
 
-    httpd_resp_set_type(req, "image/jpeg");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-store, no-cache, must-revalidate");
-    esp_err_t res = httpd_resp_send(req, reinterpret_cast<const char*>(fb->buf), fb->len);
-    esp_camera_fb_return(fb);
-    return res;
-}
+        case WStype_BIN:
+            // Không dùng binary từ server trong flow này
+            break;
 
-// ─── Status JSON ──────────────────────────────────────────────────────────────
-static esp_err_t status_handler(httpd_req_t* req) {
-    char json[128];
-    int n = snprintf(json, sizeof(json),
-                     "{\"ip\":\"%s\",\"rssi\":%d,\"psram\":%u}",
-                     WiFi.localIP().toString().c_str(),
-                     WiFi.RSSI(),
-                     ESP.getFreePsram());
-    httpd_resp_set_type(req, "application/json");
-    return httpd_resp_send(req, json, n);
-}
+        case WStype_ERROR:
+            Serial.println("[WS] Error");
+            break;
 
-// ─── MJPEG stream ─────────────────────────────────────────────────────────────
-static esp_err_t stream_handler(httpd_req_t* req) {
-    static const char* CONTENT_TYPE  = "multipart/x-mixed-replace;boundary=frame";
-    static const char* BOUNDARY      = "\r\n--frame\r\n";
-    static const char* PART_HDR_FMT  = "Content-Type: image/jpeg\r\nContent-Length: %u\r\n\r\n";
-
-    httpd_resp_set_type(req, CONTENT_TYPE);
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-    // ★ Disable Nagle — reduces latency on each chunk
-    httpd_resp_set_hdr(req, "X-Framerate", "30");
-
-    char part_buf[64];
-    esp_err_t res = ESP_OK;
-
-    while (true) {
-        camera_fb_t* fb = esp_camera_fb_get();
-        if (!fb) { res = ESP_FAIL; break; }
-
-        int hdr_len = snprintf(part_buf, sizeof(part_buf), PART_HDR_FMT, fb->len);
-
-        res = httpd_resp_send_chunk(req, BOUNDARY, strlen(BOUNDARY));
-        if (res == ESP_OK)
-            res = httpd_resp_send_chunk(req, part_buf, hdr_len);
-        if (res == ESP_OK)
-            res = httpd_resp_send_chunk(req, reinterpret_cast<const char*>(fb->buf), fb->len);
-        if (res == ESP_OK)
-            res = httpd_resp_send_chunk(req, "\r\n", 2);
-
-        esp_camera_fb_return(fb);
-
-        if (res != ESP_OK) break;
-
-        // ★ Yield CPU so Wi-Fi stack & watchdog stay healthy
-        taskYIELD();
+        case WStype_PING:
+        case WStype_PONG:
+            break;
     }
-    return res;
+}
+
+// ─── Xử lý lệnh từ FastAPI ───────────────────────────────────────────────────
+// FastAPI có thể remote-control camera (chất lượng, fps, flip...)
+void handleServerCommand(uint8_t* payload, size_t length) {
+    // Parse JSON tối giản không dùng lib nặng
+    String msg = String((char*)payload);
+
+    if (msg.indexOf("\"set_quality\"") >= 0) {
+        int idx = msg.indexOf("\"value\":");
+        if (idx >= 0) {
+            int q = msg.substring(idx + 8).toInt();
+            q = constrain(q, 0, 63);
+            sensor_t* s = esp_camera_sensor_get();
+            if (s) s->set_quality(s, q);
+            Serial.printf("[CMD] Quality set to %d\n", q);
+        }
+    }
+    else if (msg.indexOf("\"set_framesize\"") >= 0) {
+        int idx = msg.indexOf("\"value\":");
+        if (idx >= 0) {
+            int fs = msg.substring(idx + 8).toInt();
+            sensor_t* s = esp_camera_sensor_get();
+            if (s) s->set_framesize(s, (framesize_t)fs);
+            Serial.printf("[CMD] Framesize set to %d\n", fs);
+        }
+    }
+    else if (msg.indexOf("\"set_vflip\"") >= 0) {
+        bool flip = msg.indexOf("\"value\":1") >= 0;
+        sensor_t* s = esp_camera_sensor_get();
+        if (s) s->set_vflip(s, flip ? 1 : 0);
+    }
+    else if (msg.indexOf("\"set_hmirror\"") >= 0) {
+        bool mirror = msg.indexOf("\"value\":1") >= 0;
+        sensor_t* s = esp_camera_sensor_get();
+        if (s) s->set_hmirror(s, mirror ? 1 : 0);
+    }
+    else if (msg.indexOf("\"ping\"") >= 0) {
+        // Trả lời pong với stats
+        char pong[128];
+        snprintf(pong, sizeof(pong),
+                 "{\"type\":\"pong\",\"frames\":%u,\"heap\":%u,\"rssi\":%d}",
+                 frame_count, ESP.getFreeHeap(), WiFi.RSSI());
+        ws.sendTXT(pong);
+    }
+}
+
+// ─── Gửi 1 frame JPEG qua WebSocket binary ───────────────────────────────────
+static bool send_frame() {
+    camera_fb_t* fb = esp_camera_fb_get();
+    if (!fb) {
+        Serial.println("[CAM] fb_get failed");
+        return false;
+    }
+
+    bool ok = false;
+    if (fb->format == PIXFORMAT_JPEG) {
+        // Gửi raw binary — FastAPI nhận bằng websocket.receive_bytes()
+        ok = ws.sendBIN(fb->buf, fb->len);
+    } else {
+        // Trường hợp format không phải JPEG (hiếm khi xảy ra)
+        Serial.println("[CAM] Non-JPEG frame, skipping");
+        ok = true;  // không lỗi, chỉ skip
+    }
+
+    esp_camera_fb_return(fb);
+    return ok;
 }
 
 // ─── Camera init ──────────────────────────────────────────────────────────────
@@ -143,109 +170,84 @@ static bool init_camera() {
     cfg.pin_sccb_scl  = SIOC_GPIO_NUM;
     cfg.pin_pwdn      = PWDN_GPIO_NUM;
     cfg.pin_reset     = RESET_GPIO_NUM;
-
-    // 20 MHz is more stable on many ESP32-CAM + USB-TTL setups.
     cfg.xclk_freq_hz  = 20000000;
     cfg.pixel_format  = PIXFORMAT_JPEG;
-    cfg.grab_mode     = CAMERA_GRAB_LATEST;   // luôn lấy frame mới nhất
+    cfg.grab_mode     = CAMERA_GRAB_LATEST;
     cfg.fb_location   = CAMERA_FB_IN_PSRAM;
 
     if (psramFound()) {
-        cfg.frame_size   = STREAM_FRAME_SIZE;
-        cfg.jpeg_quality = STREAM_JPEG_QUALITY;
+        cfg.frame_size   = FRAME_SIZE;
+        cfg.jpeg_quality = JPEG_QUALITY;
         cfg.fb_count     = 2;
     } else {
         cfg.frame_size   = FRAMESIZE_QVGA;
-        cfg.jpeg_quality = 14;
+        cfg.jpeg_quality = 16;
         cfg.fb_count     = 1;
         cfg.fb_location  = CAMERA_FB_IN_DRAM;
     }
 
     if (esp_camera_init(&cfg) != ESP_OK) {
-        Serial.println("Camera init failed");
+        Serial.println("[CAM] Init failed");
         return false;
     }
 
-    // ─── Fine-tune sensor ─────────────────────────────────────────────────────
     sensor_t* s = esp_camera_sensor_get();
     if (s) {
-        s->set_framesize(s,   psramFound() ? STREAM_FRAME_SIZE : FRAMESIZE_QVGA);
-        s->set_quality(s,     psramFound() ? STREAM_JPEG_QUALITY : 14);
-        s->set_brightness(s,  0);    // -2..2
-        s->set_contrast(s,    1);    // -2..2
-        s->set_saturation(s,  0);
-        s->set_sharpness(s,   2);    // 0..2
-        s->set_denoise(s,     1);    // bật khử nhiễu
-        s->set_ae_level(s,    1);    // auto-exposure boost nhẹ
-        s->set_awb_gain(s,    1);    // auto white-balance gain
-        s->set_whitebal(s,    1);
-        s->set_exposure_ctrl(s, 1);  // auto exposure ON
-        s->set_gain_ctrl(s,   1);    // auto gain ON
-        s->set_lenc(s,        1);    // lens correction
-        s->set_hmirror(s,     0);
-        s->set_vflip(s,       0);
+        s->set_framesize(s,     psramFound() ? FRAME_SIZE : FRAMESIZE_QVGA);
+        s->set_quality(s,       psramFound() ? JPEG_QUALITY : 16);
+        s->set_brightness(s,    0);
+        s->set_contrast(s,      1);
+        s->set_saturation(s,    0);
+        s->set_sharpness(s,     2);
+        s->set_denoise(s,       1);
+        s->set_ae_level(s,      1);
+        s->set_awb_gain(s,      1);
+        s->set_whitebal(s,      1);
+        s->set_exposure_ctrl(s, 1);
+        s->set_gain_ctrl(s,     1);
+        s->set_lenc(s,          1);
+        s->set_hmirror(s,       0);
+        s->set_vflip(s,         0);
     }
+    Serial.println("[CAM] Init OK");
     return true;
 }
 
 // ─── Wi-Fi ────────────────────────────────────────────────────────────────────
 static bool connect_wifi() {
     WiFi.mode(WIFI_STA);
-    WiFi.setSleep(false);      // tắt power-save, giảm jitter
-    WiFi.setTxPower(WIFI_POWER_19_5dBm);  // ★ max TX power
+    WiFi.setSleep(false);
+    WiFi.setTxPower(WIFI_POWER_17dBm);
     WiFi.begin(WIFI_SSID, WIFI_PASS);
 
-    Serial.print("Connecting to WiFi");
+    Serial.print("[WiFi] Connecting");
     const uint32_t t0 = millis();
     while (WiFi.status() != WL_CONNECTED) {
         delay(250);
         Serial.print('.');
         if (millis() - t0 > 20000) {
-            Serial.println("\nWiFi timeout");
+            Serial.println("\n[WiFi] Timeout");
             return false;
         }
     }
-    Serial.println("\nConnected");
-    Serial.printf("IP: %s  RSSI: %d dBm\n",
+    Serial.printf("\n[WiFi] Connected. IP: %s  RSSI: %d dBm\n",
                   WiFi.localIP().toString().c_str(), WiFi.RSSI());
     return true;
 }
 
-// ─── HTTP servers ─────────────────────────────────────────────────────────────
-static bool start_camera_server() {
-    // --- Port 80: index / jpg / status ---
-    httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-    cfg.server_port       = 80;
-    cfg.max_uri_handlers  = 8;
-    cfg.stack_size        = 8192;
+// ─── WebSocket setup ─────────────────────────────────────────────────────────
+static void setup_websocket() {
+    // Dùng plain WS (ws://). Nếu VPS có SSL thì đổi sang beginSSL()
+    ws.begin(WS_HOST, WS_PORT, WS_PATH);
+    ws.onEvent(onWebSocketEvent);
 
-    if (httpd_start(&camera_httpd, &cfg) != ESP_OK) return false;
+    // Tự động reconnect mỗi 3 giây khi mất kết nối
+    ws.setReconnectInterval(3000);
 
-    const httpd_uri_t uris[] = {
-        { "/",       HTTP_GET, index_handler,  nullptr },
-        { "/jpg",    HTTP_GET, jpg_handler,    nullptr },
-        { "/status", HTTP_GET, status_handler, nullptr },
-    };
-    for (auto& u : uris) httpd_register_uri_handler(camera_httpd, &u);
+    // Heartbeat ping mỗi 15s, timeout 3s
+    ws.enableHeartbeat(15000, 3000, 2);
 
-    // --- Port 81: MJPEG stream ---
-    httpd_config_t scfg = HTTPD_DEFAULT_CONFIG();
-    scfg.server_port      = 81;
-    scfg.ctrl_port        = cfg.ctrl_port + 1;
-    scfg.max_uri_handlers = 4;
-    scfg.stack_size       = 16384;
-    scfg.recv_wait_timeout = 10;
-    scfg.send_wait_timeout = 10;
-    scfg.lru_purge_enable  = true;
-
-    if (httpd_start(&stream_httpd, &scfg) != ESP_OK) return false;
-
-    const httpd_uri_t stream_uri = {
-        "/stream", HTTP_GET, stream_handler, nullptr
-    };
-    httpd_register_uri_handler(stream_httpd, &stream_uri);
-
-    return true;
+    Serial.printf("[WS] Connecting to ws://%s:%d%s\n", WS_HOST, WS_PORT, WS_PATH);
 }
 
 // ─── Arduino entry points ─────────────────────────────────────────────────────
@@ -253,7 +255,7 @@ void setup() {
     Serial.begin(115200);
     delay(500);
 
-    Serial.println("\n=== ESP32-CAM Boot ===");
+    Serial.println("\n=== ESP32-CAM WebSocket Client ===");
     Serial.printf("Free heap  : %u B\n", ESP.getFreeHeap());
     Serial.printf("Free PSRAM : %u B\n", ESP.getFreePsram());
 
@@ -265,15 +267,28 @@ void setup() {
         Serial.println("WiFi error — restarting");
         delay(2000); ESP.restart();
     }
-    if (!start_camera_server()) {
-        Serial.println("Server error — restarting");
-        delay(2000); ESP.restart();
-    }
 
-    Serial.printf("\nReady!  http://%s\n",        WiFi.localIP().toString().c_str());
-    Serial.printf("Stream: http://%s:81/stream\n", WiFi.localIP().toString().c_str());
+    setup_websocket();
 }
 
 void loop() {
-    delay(1000);
+    // Xử lý WebSocket events (reconnect, heartbeat, incoming msg)
+    ws.loop();
+
+    // Chỉ gửi frame khi đã kết nối và đủ interval
+    if (ws_connected) {
+        uint32_t now = millis();
+        if (now - last_frame_ms >= FRAME_INTERVAL_MS) {
+            if (send_frame()) {
+                frame_count++;
+            }
+            last_frame_ms = now;
+
+            // Log mỗi 100 frames
+            if (frame_count % 100 == 0) {
+                Serial.printf("[STATS] Frames: %u  Heap: %u  RSSI: %d\n",
+                              frame_count, ESP.getFreeHeap(), WiFi.RSSI());
+            }
+        }
+    }
 }
