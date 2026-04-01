@@ -1,7 +1,5 @@
 from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-from infrastructure.db.session import init_db
 from interfaces.api.middleware.exception import register_exception_handlers
 from interfaces.api.v1.alert import router as alert_router
 from interfaces.api.v1.user import router as user_router
@@ -26,12 +24,6 @@ api_v1_router.include_router(alert_router)
 api_v1_router.include_router(vehicle_router)
 api_v1_router.include_router(websocket_router)
 app.include_router(api_v1_router)
-
-
-@app.on_event("startup")
-def on_startup() -> None:
-    # Keep startup simple for local development.
-    init_db()
 
 
 @app.get("/")
