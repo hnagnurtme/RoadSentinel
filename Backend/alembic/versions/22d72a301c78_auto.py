@@ -1,8 +1,8 @@
-"""message=add user profile name and address fields
+"""auto
 
-Revision ID: 11c76830e642
-Revises: 1af62fd34a48
-Create Date: 2026-03-24 21:52:40.239382
+Revision ID: 22d72a301c78
+Revises: 1e1b788f4852
+Create Date: 2026-04-01 23:06:38.204516
 
 """
 from alembic import op
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '11c76830e642'
-down_revision = '1af62fd34a48'
+revision = '22d72a301c78'
+down_revision = '1e1b788f4852'
 branch_labels = None
 depends_on = None
 

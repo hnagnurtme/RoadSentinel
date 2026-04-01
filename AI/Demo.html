@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>ESP32-CAM YOLOv8 Object Detection</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.95;
+        }
+
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: white;
+            border-radius: 12px;
+            padding: 15px 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-label {
+            font-weight: 600;
+            color: #555;
+        }
+
+        .status-value {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .status-value.online {
+            background: #10b981;
+            color: white;
+        }
+
+        .status-value.offline {
+            background: #ef4444;
+            color: white;
+        }
+
+        .status-value.connected {
+            background: #3b82f6;
+            color: white;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 20px;
+        }
+
+        .video-section {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+
+        .video-container {
+            position: relative;
+            background: #000;
+            aspect-ratio: 4/3;
+        }
+
+        #videoCanvas {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .video-info {
+            padding: 15px;
+            background: #f8f9fa;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .fps-counter {
+            font-family: monospace;
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #10b981;
+        }
+
+        .controls-section {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+
+        .controls-section h3 {
+            margin-bottom: 15px;
+            color: #333;
+            font-size: 1.3rem;
+        }
+
+        .detections-list {
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 15px;
+        }
+
+        .detection-item {
+            background: #f8f9fa;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            border-left: 4px solid #10b981;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .detection-label {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .detection-confidence {
+            background: #10b981;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .detection-bbox {
+            font-size: 0.7rem;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .empty-state {
+            text-align: center;
+            color: #999;
+            padding: 40px;
+        }
+
+        .control-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        button.primary {
+            background: #3b82f6;
+            color: white;
+        }
+
+        button.primary:hover {
+            background: #2563eb;
+        }
+
+        button.danger {
+            background: #ef4444;
+            color: white;
+        }
+
+        button.danger:hover {
+            background: #dc2626;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .stats {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+        }
+
+        .stat-label {
+            color: #666;
+        }
+
+        .stat-value {
+            font-weight: 600;
+            color: #333;
+        }
+
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            .status-bar {
+                flex-direction: column;
+                gap: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎥 ESP32-CAM YOLOv8 Object Detection</h1>
+            <p>Real-time object detection with YOLOv8 on ESP32-CAM</p>
+        </div>
+
+        <div class="status-bar">
+            <div class="status-item">
+                <span class="status-label">Camera Status:</span>
+                <span id="cameraStatus" class="status-value offline">Offline</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">WebSocket:</span>
+                <span id="wsStatus" class="status-value offline">Disconnected</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Connected Clients:</span>
+                <span id="clientCount" class="status-value">0</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">FPS:</span>
+                <span id="fpsDisplay" class="status-value">0</span>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="video-section">
+                <div class="video-container">
+                    <canvas id="videoCanvas"></canvas>
+                </div>
+                <div class="video-info">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <span class="status-label">Latest Detections:</span>
+                            <span id="detectionCount" class="fps-counter" style="margin-left: 10px;">0</span>
+                        </div>
+                        <div>
+                            <span class="status-label">Last Frame:</span>
+                            <span id="lastFrameTime" class="fps-counter">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="controls-section">
+                <h3>📊 Detections</h3>
+                <div id="detectionsList" class="detections-list">
+                    <div class="empty-state">No detections yet</div>
+                </div>
+
+                <div class="control-buttons">
+                    <button id="reconnectBtn" class="primary">🔄 Reconnect</button>
+                    <button id="clearStatsBtn" class="primary">📊 Clear Stats</button>
+                </div>
+
+                <div class="stats">
+                    <h3>📈 Statistics</h3>
+                    <div class="stat-row">
+                        <span class="stat-label">Total Frames Received:</span>
+                        <span id="totalFrames" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Total Detections:</span>
+                        <span id="totalDetections" class="stat-value">0</span>
+                    </div>
+                    <div class="stat-row">
+                        <span class="stat-label">Average FPS:</span>
+                        <span id="avgFps" class="stat-value">0</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const WS_URL = `ws://${window.location.hostname}:8000/ws/frontend`;
+        
+        // DOM Elements
+        const canvas = document.getElementById('videoCanvas');
+        const ctx = canvas.getContext('2d');
+        const cameraStatusEl = document.getElementById('cameraStatus');
+        const wsStatusEl = document.getElementById('wsStatus');
+        const clientCountEl = document.getElementById('clientCount');
+        const fpsDisplayEl = document.getElementById('fpsDisplay');
+        const detectionCountEl = document.getElementById('detectionCount');
+        const lastFrameTimeEl = document.getElementById('lastFrameTime');
+        const detectionsListEl = document.getElementById('detectionsList');
+        const totalFramesEl = document.getElementById('totalFrames');
+        const totalDetectionsEl = document.getElementById('totalDetections');
+        const avgFpsEl = document.getElementById('avgFps');
+        const reconnectBtn = document.getElementById('reconnectBtn');
+        const clearStatsBtn = document.getElementById('clearStatsBtn');
+
+        // State
+        let ws = null;
+        let totalFrames = 0;
+        let totalDetections = 0;
+        let lastFrameTimestamp = 0;
+        let fpsHistory = [];
+        let pendingFrame = null;
+        let isDecodingFrame = false;
+        let frameImage = new Image();
+        let lastDetectionsListUpdate = 0;
+        let pingTimer = null;
+        const DETECTIONS_LIST_INTERVAL_MS = 200;
+
+        // Initialize canvas size
+        canvas.width = 640;
+        canvas.height = 480;
+
+        function sendPing() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'ping' }));
+            }
+        }
+
+        // Connect WebSocket
+        function connectWebSocket() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.close();
+            }
+
+            wsStatusEl.textContent = 'Connecting...';
+            wsStatusEl.className = 'status-value';
+            
+            ws = new WebSocket(WS_URL);
+            
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                wsStatusEl.textContent = 'Connected';
+                wsStatusEl.className = 'status-value connected';
+
+                // Request status immediately, then keep heartbeat every 30s
+                sendPing();
+                if (pingTimer) clearInterval(pingTimer);
+                pingTimer = setInterval(sendPing, 30000);
+            };
+            
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleMessage(data);
+                } catch (error) {
+                    console.error('Error parsing message:', error);
+                }
+            };
+            
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                wsStatusEl.textContent = 'Error';
+                wsStatusEl.className = 'status-value offline';
+            };
+            
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                wsStatusEl.textContent = 'Disconnected';
+                wsStatusEl.className = 'status-value offline';
+                cameraStatusEl.textContent = 'Offline';
+                cameraStatusEl.className = 'status-value offline';
+                if (pingTimer) {
+                    clearInterval(pingTimer);
+                    pingTimer = null;
+                }
+                
+                // Try to reconnect after 3 seconds
+                setTimeout(() => {
+                    if (!ws || ws.readyState === WebSocket.CLOSED) {
+                        connectWebSocket();
+                    }
+                }, 3000);
+            };
+        }
+        
+        // Handle incoming messages
+        function handleMessage(data) {
+            switch (data.type) {
+                case 'frame':
+                    handleFrame(data);
+                    break;
+                    
+                case 'camera_offline':
+                    cameraStatusEl.textContent = 'Offline';
+                    cameraStatusEl.className = 'status-value offline';
+                    break;
+                    
+                case 'pong':
+                    clientCountEl.textContent = data.clients || 0;
+                    if (data.camera) {
+                        cameraStatusEl.textContent = 'Online';
+                        cameraStatusEl.className = 'status-value online';
+                    } else {
+                        cameraStatusEl.textContent = 'Offline';
+                        cameraStatusEl.className = 'status-value offline';
+                    }
+                    break;
+                    
+                default:
+                    console.log('Unknown message type:', data.type);
+            }
+        }
+        
+        // Handle frame data
+        function handleFrame(data) {
+            const now = Date.now();
+
+            cameraStatusEl.textContent = 'Online';
+            cameraStatusEl.className = 'status-value online';
+            
+            // Update stats
+            totalFrames++;
+            totalFramesEl.textContent = totalFrames;
+            
+            const detections = Array.isArray(data.detections) ? data.detections : [];
+            totalDetections += detections.length;
+            totalDetectionsEl.textContent = totalDetections;
+            detectionCountEl.textContent = detections.length;
+
+            // Throttle cập nhật DOM để giữ FPS render ổn định
+            if (now - lastDetectionsListUpdate >= DETECTIONS_LIST_INTERVAL_MS) {
+                updateDetectionsList(detections);
+                lastDetectionsListUpdate = now;
+            }
+            
+            // Calculate FPS
+            if (lastFrameTimestamp > 0) {
+                const frameTime = (now - lastFrameTimestamp) / 1000;
+                const fps = 1 / frameTime;
+                fpsHistory.push(fps);
+                if (fpsHistory.length > 10) fpsHistory.shift();
+                
+                const avgFps = fpsHistory.reduce((a, b) => a + b, 0) / fpsHistory.length;
+                fpsDisplayEl.textContent = Math.round(avgFps);
+                avgFpsEl.textContent = Math.round(avgFps);
+            }
+            lastFrameTimestamp = now;
+            
+            // Update last frame time
+            lastFrameTimeEl.textContent = new Date().toLocaleTimeString();
+            
+            // Display image
+            if (data.jpeg) {
+                pendingFrame = {
+                    jpeg: data.jpeg,
+                    detections: detections
+                };
+                processPendingFrame();
+            }
+        }
+
+        function processPendingFrame() {
+            if (isDecodingFrame || !pendingFrame) return;
+
+            isDecodingFrame = true;
+            const frame = pendingFrame;
+            pendingFrame = null;
+
+            frameImage.onload = () => {
+                // Resize canvas to match source image so bbox tọa độ khớp pixel
+                if (canvas.width !== frameImage.width || canvas.height !== frameImage.height) {
+                    canvas.width = frameImage.width;
+                    canvas.height = frameImage.height;
+                }
+
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(frameImage, 0, 0, canvas.width, canvas.height);
+                drawDetections(frame.detections);
+
+                isDecodingFrame = false;
+                if (pendingFrame) {
+                    processPendingFrame();
+                }
+            };
+
+            frameImage.onerror = () => {
+                isDecodingFrame = false;
+                if (pendingFrame) {
+                    processPendingFrame();
+                }
+            };
+
+            frameImage.src = `data:image/jpeg;base64,${frame.jpeg}`;
+        }
+
+        function drawDetections(detections) {
+            if (!Array.isArray(detections) || detections.length === 0) return;
+
+            ctx.lineWidth = 2;
+            ctx.font = 'bold 15px Segoe UI';
+            ctx.textBaseline = 'top';
+
+            detections.forEach((det) => {
+                const bbox = det.bbox;
+                if (!Array.isArray(bbox) || bbox.length !== 4) return;
+
+                let [x1, y1, x2, y2] = bbox.map(Number);
+                if ([x1, y1, x2, y2].some((v) => Number.isNaN(v))) return;
+
+                x1 = Math.max(0, Math.min(canvas.width - 1, x1));
+                y1 = Math.max(0, Math.min(canvas.height - 1, y1));
+                x2 = Math.max(0, Math.min(canvas.width - 1, x2));
+                y2 = Math.max(0, Math.min(canvas.height - 1, y2));
+
+                const w = Math.max(1, x2 - x1);
+                const h = Math.max(1, y2 - y1);
+
+                ctx.strokeStyle = '#00e676';
+                ctx.strokeRect(x1, y1, w, h);
+
+                const conf = typeof det.conf === 'number' ? `${Math.round(det.conf * 100)}%` : '';
+                const label = `${det.label || 'object'} ${conf}`.trim();
+                const textW = ctx.measureText(label).width;
+                const textH = 18;
+                const tagX = x1;
+                const tagY = Math.max(0, y1 - textH - 2);
+
+                ctx.fillStyle = 'rgba(0, 230, 118, 0.9)';
+                ctx.fillRect(tagX, tagY, textW + 10, textH);
+                ctx.fillStyle = '#0b1020';
+                ctx.fillText(label, tagX + 5, tagY + 2);
+            });
+        }
+        
+        // Update detections list in UI
+        function updateDetectionsList(detections) {
+            if (!detections || detections.length === 0) {
+                detectionsListEl.innerHTML = '<div class="empty-state">No detections yet</div>';
+                return;
+            }
+            
+            // Group detections by label
+            const grouped = {};
+            detections.forEach(det => {
+                if (!grouped[det.label]) {
+                    grouped[det.label] = [];
+                }
+                grouped[det.label].push(det);
+            });
+            
+            // Create HTML
+            let html = '';
+            for (const [label, items] of Object.entries(grouped)) {
+                html += `
+                    <div class="detection-item">
+                        <div>
+                            <div class="detection-label">${label}</div>
+                            <div class="detection-bbox">${items.length} detection(s)</div>
+                        </div>
+                        <div class="detection-confidence">
+                            ${Math.max(...items.map(i => i.conf * 100)).toFixed(0)}%
+                        </div>
+                    </div>
+                `;
+                
+                // Show individual detections if less than 3
+                if (items.length <= 3) {
+                    items.forEach(det => {
+                        html += `
+                            <div class="detection-item" style="margin-left: 20px; border-left-color: #3b82f6;">
+                                <div class="detection-label">${det.label}</div>
+                                <div class="detection-confidence">${(det.conf * 100).toFixed(0)}%</div>
+                            </div>
+                        `;
+                    });
+                }
+            }
+            
+            detectionsListEl.innerHTML = html;
+        }
+        
+        // Reconnect
+        function reconnect() {
+            if (ws) {
+                ws.close();
+            }
+            connectWebSocket();
+            
+            // Reset stats
+            totalFrames = 0;
+            totalDetections = 0;
+            fpsHistory = [];
+            totalFramesEl.textContent = '0';
+            totalDetectionsEl.textContent = '0';
+            fpsDisplayEl.textContent = '0';
+            avgFpsEl.textContent = '0';
+            detectionCountEl.textContent = '0';
+        }
+        
+        // Clear stats
+        function clearStats() {
+            totalFrames = 0;
+            totalDetections = 0;
+            fpsHistory = [];
+            totalFramesEl.textContent = '0';
+            totalDetectionsEl.textContent = '0';
+            fpsDisplayEl.textContent = '0';
+            avgFpsEl.textContent = '0';
+            detectionCountEl.textContent = '0';
+            detectionsListEl.innerHTML = '<div class="empty-state">No detections yet</div>';
+        }
+        
+        // Request camera control (optional - if ESP32-CAM supports PTZ)
+        function sendCameraControl(action, value) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'set_camera',
+                    action: action,
+                    value: value
+                }));
+            }
+        }
+        
+        // Event listeners
+        reconnectBtn.addEventListener('click', reconnect);
+        clearStatsBtn.addEventListener('click', clearStats);
+        
+        // Start connection
+        connectWebSocket();
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'r' || e.key === 'R') {
+                reconnect();
+            } else if (e.key === 'c' || e.key === 'C') {
+                clearStats();
+            }
+        });
+        
+        // Log connection info
+        console.log('Frontend initialized. WebSocket URL:', WS_URL);
+    </script>
+</body>
+</html>

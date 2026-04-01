@@ -6,18 +6,20 @@ from shared.config import settings
 
 DATABASE_URL = settings.DATABASE_URL
 
-connect_args = {}
-
 engine = create_engine(
     DATABASE_URL,
-    connect_args=connect_args,
     echo=settings.SQL_ECHO,
 )
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+SessionLocal = sessionmaker(
+    bind=engine,
+    autocommit=False,
+    autoflush=False,
+    expire_on_commit=False,
+)
 
 
 def init_db():
-    """Create database tables from models (for quick dev setup)."""
     Base.metadata.create_all(bind=engine)
 
 
