@@ -17,7 +17,7 @@ gateway:
   capture:
     source: esp32
     webcam_index: 0
-    esp32_url: http://192.168.1.157:81/stream
+    esp32_url: http://172.31.98.91:81/stream
     target_fps: 5
 
 esp32_simulator:

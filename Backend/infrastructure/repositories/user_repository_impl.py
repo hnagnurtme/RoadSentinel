@@ -18,6 +18,7 @@ class UserRepositoryImpl(UserRepository):
             _id=row._id,
             email=EmailAddress(row.email),
             name=row.name,
+            avatar_image_url=row.avatar_image_url,
             name__family=row.name__family,
             name__given=row.name__given,
             name__middle=row.name__middle,
@@ -38,6 +39,7 @@ class UserRepositoryImpl(UserRepository):
         row = User(
             email=user.email.value,
             name=user.name,
+            avatar_image_url=user.avatar_image_url,
             name__family=user.name__family,
             name__given=user.name__given,
             name__middle=user.name__middle,

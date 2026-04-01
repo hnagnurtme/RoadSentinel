@@ -10,6 +10,7 @@ class VehicleOverviewView(PGView):
         v.plate_number,
         v.manufacturer,
         v.model,
+        v.vehicle_image_url,
         v.color,
         v.production_year,
         v.vin,

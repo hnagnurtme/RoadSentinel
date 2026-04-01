@@ -6,6 +6,7 @@ from datetime import date
 class CreateUserCommand:
     email: str
     name: str | None = None
+    avatar_image_url: str | None = None
     name__family: str | None = None
     name__given: str | None = None
     name__middle: str | None = None

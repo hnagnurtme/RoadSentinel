@@ -9,6 +9,7 @@ class UserOverviewView(PGView):
         u._id,
         u.email,
         u.name,
+        u.avatar_image_url,
         u.name__family,
         u.name__given,
         u.name__middle,

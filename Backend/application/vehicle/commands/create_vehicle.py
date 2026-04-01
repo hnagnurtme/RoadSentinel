@@ -6,6 +6,7 @@ class CreateVehicleCommand:
     plate_number: str
     manufacturer: str | None = None
     model: str | None = None
+    vehicle_image_url: str | None = None
     color: str | None = None
     production_year: int | None = None
     vin: str | None = None
