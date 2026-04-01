@@ -190,10 +190,10 @@ jobs:
               exit 1
             fi
 
-            BACKEND_IMAGE=\"\$BACKEND_IMAGE\" \$COMPOSE_CMD -f \"\$REMOTE_COMPOSE_FILE\" pull backend
-            BACKEND_IMAGE=\"\$BACKEND_IMAGE\" \$COMPOSE_CMD -f \"\$REMOTE_COMPOSE_FILE\" up -d backend nginx
-            BACKEND_IMAGE=\"\$BACKEND_IMAGE\" \$COMPOSE_CMD -f \"\$REMOTE_COMPOSE_FILE\" --profile init run --rm certbot-init
-            NGINX_CONF_TEMPLATE=\"./\$REMOTE_NGINX_DIR/nginx.conf.template\" BACKEND_IMAGE=\"\$BACKEND_IMAGE\" \$COMPOSE_CMD -f \"\$REMOTE_COMPOSE_FILE\" up -d nginx certbot-renew
+            BACKEND_IMAGE=\"\$BACKEND_IMAGE\" \$COMPOSE_CMD --env-file \"\$REMOTE_ENV_FILE\" -f \"\$REMOTE_COMPOSE_FILE\" pull backend
+            BACKEND_IMAGE=\"\$BACKEND_IMAGE\" \$COMPOSE_CMD --env-file \"\$REMOTE_ENV_FILE\" -f \"\$REMOTE_COMPOSE_FILE\" up -d backend nginx
+            BACKEND_IMAGE=\"\$BACKEND_IMAGE\" \$COMPOSE_CMD --env-file \"\$REMOTE_ENV_FILE\" -f \"\$REMOTE_COMPOSE_FILE\" --profile init run --rm certbot-init
+            NGINX_CONF_TEMPLATE=\"./\$REMOTE_NGINX_DIR/nginx.conf.template\" BACKEND_IMAGE=\"\$BACKEND_IMAGE\" \$COMPOSE_CMD --env-file \"\$REMOTE_ENV_FILE\" -f \"\$REMOTE_COMPOSE_FILE\" up -d nginx certbot-renew
             '"
 
   preflight_backend_vps:
