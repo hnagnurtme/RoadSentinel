@@ -1,23 +1,25 @@
 services:
   backend:
-    container_name: roadsentinel-backend
     build:
       context: .
       dockerfile: Dockerfile
     image: ${BACKEND_IMAGE:-roadsentinel-backend:local}
-    env_file:
-      - .env
     ports:
       - "8000:8000"
     environment:
-      APP_ENV: development
+      APP_ENV: ${APP_ENV:-development}
       APP_HOST: 0.0.0.0
-      APP_PORT: 8000
-      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
-      SQL_ECHO: "false"
+      APP_PORT: ${APP_PORT:-8000}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@localhost:5432/roadsentinel}
+      SQL_ECHO: ${SQL_ECHO:-false}
     volumes:
       - backend_data:/app/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/').read()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
 volumes:
   backend_data:

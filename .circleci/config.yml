@@ -85,6 +85,8 @@ jobs:
             SSH_PORT="${VPS_SSH_PORT:-22}"
             LOCAL_COMPOSE_FILE="${COMPOSE_SOURCE_FILE:-Backend/docker-compose.yml}"
             REMOTE_COMPOSE_FILE="${DEPLOY_COMPOSE_FILE:-docker-compose.yml}"
+            LOCAL_ENV_FILE="/tmp/backend.deploy.env"
+            REMOTE_ENV_FILE="${DEPLOY_ENV_FILE:-.env}"
             BACKEND_IMAGE="${DOCKERHUB_USERNAME}/roadsentinel-backend:${CIRCLE_TAG:-latest}"
 
             if [ ! -f "$LOCAL_COMPOSE_FILE" ]; then
@@ -92,17 +94,35 @@ jobs:
               exit 1
             fi
 
+            if [ -z "$DATABASE_URL" ]; then
+              echo "DATABASE_URL must be set in CircleCI project settings/context for deploy."
+              exit 1
+            fi
+
+            {
+              printf 'APP_ENV=%s\n' "${APP_ENV:-production}"
+              printf 'APP_HOST=%s\n' "${APP_HOST:-0.0.0.0}"
+              printf 'APP_PORT=%s\n' "${APP_PORT:-8000}"
+              printf 'DATABASE_URL=%s\n' "${DATABASE_URL}"
+              printf 'SQL_ECHO=%s\n' "${SQL_ECHO:-false}"
+              printf 'CORS_ALLOW_ORIGINS=%s\n' "${CORS_ALLOW_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}"
+              printf 'CORS_ALLOW_CREDENTIALS=%s\n' "${CORS_ALLOW_CREDENTIALS:-true}"
+              printf 'CORS_ALLOW_METHODS=%s\n' "${CORS_ALLOW_METHODS:-*}"
+              printf 'CORS_ALLOW_HEADERS=%s\n' "${CORS_ALLOW_HEADERS:-*}"
+            } > "$LOCAL_ENV_FILE"
+
             mkdir -p ~/.ssh
             ssh-keyscan -p "$SSH_PORT" -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
-            ssh -p "$SSH_PORT" "$VPS_USER@$VPS_HOST" "DEPLOY_PATH='$DEPLOY_PATH' REMOTE_COMPOSE_FILE='$REMOTE_COMPOSE_FILE' BACKEND_IMAGE='$BACKEND_IMAGE' bash -lc '
+            ssh -p "$SSH_PORT" "$VPS_USER@$VPS_HOST" "DEPLOY_PATH='$DEPLOY_PATH' REMOTE_COMPOSE_FILE='$REMOTE_COMPOSE_FILE' REMOTE_ENV_FILE='$REMOTE_ENV_FILE' BACKEND_IMAGE='$BACKEND_IMAGE' bash -lc '
             set -e
-            mkdir -p \"\$DEPLOY_PATH\" \"\$(dirname \"\$DEPLOY_PATH/\$REMOTE_COMPOSE_FILE\")\"
+            mkdir -p \"\$DEPLOY_PATH\" \"\$(dirname \"\$DEPLOY_PATH/\$REMOTE_COMPOSE_FILE\")\" \"\$(dirname \"\$DEPLOY_PATH/\$REMOTE_ENV_FILE\")\"
             '"
 
             scp -P "$SSH_PORT" "$LOCAL_COMPOSE_FILE" "$VPS_USER@$VPS_HOST:$DEPLOY_PATH/$REMOTE_COMPOSE_FILE"
+            scp -P "$SSH_PORT" "$LOCAL_ENV_FILE" "$VPS_USER@$VPS_HOST:$DEPLOY_PATH/$REMOTE_ENV_FILE"
 
-            ssh -p "$SSH_PORT" "$VPS_USER@$VPS_HOST" "DEPLOY_PATH='$DEPLOY_PATH' REMOTE_COMPOSE_FILE='$REMOTE_COMPOSE_FILE' BACKEND_IMAGE='$BACKEND_IMAGE' bash -lc '
+            ssh -p "$SSH_PORT" "$VPS_USER@$VPS_HOST" "DEPLOY_PATH='$DEPLOY_PATH' REMOTE_COMPOSE_FILE='$REMOTE_COMPOSE_FILE' REMOTE_ENV_FILE='$REMOTE_ENV_FILE' BACKEND_IMAGE='$BACKEND_IMAGE' bash -lc '
             set -e
             export PATH=\"\$PATH:/usr/local/bin:/usr/bin:/bin:/snap/bin\"
 
@@ -142,6 +162,10 @@ jobs:
             cd \"\$DEPLOY_PATH\"
             if [ ! -f \"\$REMOTE_COMPOSE_FILE\" ]; then
               echo \"Copied compose file not found: \$DEPLOY_PATH/\$REMOTE_COMPOSE_FILE\"
+              exit 1
+            fi
+            if [ ! -f \"\$REMOTE_ENV_FILE\" ]; then
+              echo \"Copied env file not found: \$DEPLOY_PATH/\$REMOTE_ENV_FILE\"
               exit 1
             fi
 
