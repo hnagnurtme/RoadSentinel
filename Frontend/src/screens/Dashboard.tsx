@@ -159,7 +159,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e0e3e5" />
                 <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#757780', fontWeight: 700 }} dy={10} />
                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#757780', fontWeight: 700 }} />
-                <Tooltip 
+                <Tooltip
                   cursor={{ fill: '#f2f4f6' }}
                   contentStyle={{ borderRadius: '8px', border: '1px solid #e0e3e5', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                   labelStyle={{ fontWeight: 'bold', color: '#191c1e', marginBottom: '4px' }}
@@ -211,7 +211,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
-                  <Tooltip 
+                  <Tooltip
                     contentStyle={{ borderRadius: '8px', border: '1px solid #e0e3e5', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                     itemStyle={{ fontWeight: 'bold', color: '#191c1e' }}
                   />

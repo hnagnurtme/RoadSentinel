@@ -12,7 +12,6 @@ import time
 
 import cv2
 import numpy as np
-
 from app.utils.config import CaptureConfig
 from app.utils.logger import get_logger
 
@@ -37,9 +36,7 @@ class WebcamCapture:
         """Open the camera and start the background capture thread."""
         self._cap = cv2.VideoCapture(self._cfg.webcam_index)
         if not self._cap.isOpened():
-            raise RuntimeError(
-                f"Cannot open webcam (index={self._cfg.webcam_index})"
-            )
+            raise RuntimeError(f"Cannot open webcam (index={self._cfg.webcam_index})")
         logger.info("Webcam opened (index=%d)", self._cfg.webcam_index)
 
         self._stop_event.clear()

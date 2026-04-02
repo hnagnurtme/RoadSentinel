@@ -7,7 +7,6 @@ easy to tune without touching inference or capture code.
 
 import cv2
 import numpy as np
-
 from app.utils.config import PreprocessConfig
 from app.utils.logger import get_logger
 

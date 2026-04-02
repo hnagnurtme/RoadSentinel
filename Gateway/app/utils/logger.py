@@ -8,7 +8,6 @@ import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-
 _LOG_DIR = Path("logs")
 _LOG_FILE = _LOG_DIR / "gateway.log"
 _FORMAT = "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"

@@ -3,8 +3,8 @@ config.py – Central configuration for the Gateway DMS.
 All tuneable parameters live here so nothing is hard-coded elsewhere.
 """
 
-from dataclasses import dataclass, field
 import os
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 

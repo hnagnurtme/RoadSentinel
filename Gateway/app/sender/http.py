@@ -8,7 +8,6 @@ or as a reliability fallback when the WS connection is down.
 import json
 
 import requests
-
 from app.utils.config import SenderConfig
 from app.utils.logger import get_logger
 
@@ -37,9 +36,7 @@ def send_event_http(payload: dict, cfg: SenderConfig) -> bool:
             timeout=_DEFAULT_TIMEOUT,
         )
         response.raise_for_status()
-        logger.debug(
-            "HTTP POST %s → %d", cfg.http_url, response.status_code
-        )
+        logger.debug("HTTP POST %s → %d", cfg.http_url, response.status_code)
         return True
     except requests.exceptions.Timeout:
         logger.error("HTTP POST timed out after %.1f s", _DEFAULT_TIMEOUT)

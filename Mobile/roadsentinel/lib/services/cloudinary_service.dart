@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 
 class CloudinaryService {
   // Hardcoded for testing as requested
-  CloudinaryService([dynamic _]); 
+  CloudinaryService([dynamic _]);
 
   final String cloudName = 'dks1edqey';
   final String apiKey = '326677388198311';
@@ -20,7 +20,7 @@ class CloudinaryService {
     final signature = sha1.convert(utf8.encode(params)).toString();
 
     final url = Uri.parse('https://api.cloudinary.com/v1_1/$cloudName/image/upload');
-    
+
     try {
       final request = http.MultipartRequest('POST', url)
         ..fields['timestamp'] = timestamp.toString()
@@ -34,7 +34,7 @@ class CloudinaryService {
 
       final response = await request.send();
       final respStr = await response.stream.bytesToString();
-      
+
       if (response.statusCode == 200) {
         final json = jsonDecode(respStr);
         final secureUrl = json['secure_url'] as String?;
@@ -72,33 +72,33 @@ class CloudinaryService {
     Map<String, String>? context,
   ) async {
     final timestamp = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-    
+
     // Prepare signature parameters (Cloudinary requires them to be sorted alphabetically)
     final Map<String, String> signParams = {
       'timestamp': timestamp.toString(),
     };
     if (publicId != null) signParams['public_id'] = publicId;
-    
+
     // Sort and join
     final sortedKeys = signParams.keys.toList()..sort();
     final signStr = sortedKeys.map((k) => '$k=${signParams[k]}').join('&');
     final signature = sha1.convert(utf8.encode('$signStr$apiSecret')).toString();
 
     final url = Uri.parse('https://api.cloudinary.com/v1_1/$cloudName/$resourceType/upload');
-    
+
     try {
       final request = http.MultipartRequest('POST', url)
         ..fields['timestamp'] = timestamp.toString()
         ..fields['api_key'] = apiKey
         ..fields['signature'] = signature;
-      
+
       if (publicId != null) request.fields['public_id'] = publicId;
-      
+
       request.files.add(await http.MultipartFile.fromPath('file', file.path));
 
       final response = await request.send();
       final respStr = await response.stream.bytesToString();
-      
+
       if (response.statusCode == 200) {
         final json = jsonDecode(respStr);
         return json['secure_url'] as String?;

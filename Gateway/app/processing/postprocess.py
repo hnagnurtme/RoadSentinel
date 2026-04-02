@@ -7,7 +7,6 @@ are handed off to the event-logic layer.
 
 import cv2
 import numpy as np
-
 from app.inference.detect import Detection
 from app.utils.logger import get_logger
 

@@ -15,9 +15,9 @@ import time
 
 from app.capture.esp32 import ESP32Capture
 from app.capture.webcam import WebcamCapture
+from app.event.logic import EventLogic
 from app.evidence.recorder import EvidenceRecorder
 from app.evidence.trigger import SleepWindowTrigger
-from app.event.logic import EventLogic
 from app.inference.detect import run_inference
 from app.inference.model import load_model
 from app.processing.postprocess import annotate_frame, filter_detections

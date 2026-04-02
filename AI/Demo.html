@@ -243,11 +243,11 @@
             .main-content {
                 grid-template-columns: 1fr;
             }
-            
+
             .header h1 {
                 font-size: 1.8rem;
             }
-            
+
             .status-bar {
                 flex-direction: column;
                 gap: 10px;
@@ -333,7 +333,7 @@
     <script>
         // Configuration
         const WS_URL = `ws://${window.location.hostname}:8000/ws/frontend`;
-        
+
         // DOM Elements
         const canvas = document.getElementById('videoCanvas');
         const ctx = canvas.getContext('2d');
@@ -381,9 +381,9 @@
 
             wsStatusEl.textContent = 'Connecting...';
             wsStatusEl.className = 'status-value';
-            
+
             ws = new WebSocket(WS_URL);
-            
+
             ws.onopen = () => {
                 console.log('WebSocket connected');
                 wsStatusEl.textContent = 'Connected';
@@ -394,7 +394,7 @@
                 if (pingTimer) clearInterval(pingTimer);
                 pingTimer = setInterval(sendPing, 30000);
             };
-            
+
             ws.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
@@ -403,13 +403,13 @@
                     console.error('Error parsing message:', error);
                 }
             };
-            
+
             ws.onerror = (error) => {
                 console.error('WebSocket error:', error);
                 wsStatusEl.textContent = 'Error';
                 wsStatusEl.className = 'status-value offline';
             };
-            
+
             ws.onclose = () => {
                 console.log('WebSocket disconnected');
                 wsStatusEl.textContent = 'Disconnected';
@@ -420,7 +420,7 @@
                     clearInterval(pingTimer);
                     pingTimer = null;
                 }
-                
+
                 // Try to reconnect after 3 seconds
                 setTimeout(() => {
                     if (!ws || ws.readyState === WebSocket.CLOSED) {
@@ -429,19 +429,19 @@
                 }, 3000);
             };
         }
-        
+
         // Handle incoming messages
         function handleMessage(data) {
             switch (data.type) {
                 case 'frame':
                     handleFrame(data);
                     break;
-                    
+
                 case 'camera_offline':
                     cameraStatusEl.textContent = 'Offline';
                     cameraStatusEl.className = 'status-value offline';
                     break;
-                    
+
                 case 'pong':
                     clientCountEl.textContent = data.clients || 0;
                     if (data.camera) {
@@ -452,23 +452,23 @@
                         cameraStatusEl.className = 'status-value offline';
                     }
                     break;
-                    
+
                 default:
                     console.log('Unknown message type:', data.type);
             }
         }
-        
+
         // Handle frame data
         function handleFrame(data) {
             const now = Date.now();
 
             cameraStatusEl.textContent = 'Online';
             cameraStatusEl.className = 'status-value online';
-            
+
             // Update stats
             totalFrames++;
             totalFramesEl.textContent = totalFrames;
-            
+
             const detections = Array.isArray(data.detections) ? data.detections : [];
             totalDetections += detections.length;
             totalDetectionsEl.textContent = totalDetections;
@@ -479,23 +479,23 @@
                 updateDetectionsList(detections);
                 lastDetectionsListUpdate = now;
             }
-            
+
             // Calculate FPS
             if (lastFrameTimestamp > 0) {
                 const frameTime = (now - lastFrameTimestamp) / 1000;
                 const fps = 1 / frameTime;
                 fpsHistory.push(fps);
                 if (fpsHistory.length > 10) fpsHistory.shift();
-                
+
                 const avgFps = fpsHistory.reduce((a, b) => a + b, 0) / fpsHistory.length;
                 fpsDisplayEl.textContent = Math.round(avgFps);
                 avgFpsEl.textContent = Math.round(avgFps);
             }
             lastFrameTimestamp = now;
-            
+
             // Update last frame time
             lastFrameTimeEl.textContent = new Date().toLocaleTimeString();
-            
+
             // Display image
             if (data.jpeg) {
                 pendingFrame = {
@@ -578,14 +578,14 @@
                 ctx.fillText(label, tagX + 5, tagY + 2);
             });
         }
-        
+
         // Update detections list in UI
         function updateDetectionsList(detections) {
             if (!detections || detections.length === 0) {
                 detectionsListEl.innerHTML = '<div class="empty-state">No detections yet</div>';
                 return;
             }
-            
+
             // Group detections by label
             const grouped = {};
             detections.forEach(det => {
@@ -594,7 +594,7 @@
                 }
                 grouped[det.label].push(det);
             });
-            
+
             // Create HTML
             let html = '';
             for (const [label, items] of Object.entries(grouped)) {
@@ -609,7 +609,7 @@
                         </div>
                     </div>
                 `;
-                
+
                 // Show individual detections if less than 3
                 if (items.length <= 3) {
                     items.forEach(det => {
@@ -622,17 +622,17 @@
                     });
                 }
             }
-            
+
             detectionsListEl.innerHTML = html;
         }
-        
+
         // Reconnect
         function reconnect() {
             if (ws) {
                 ws.close();
             }
             connectWebSocket();
-            
+
             // Reset stats
             totalFrames = 0;
             totalDetections = 0;
@@ -643,7 +643,7 @@
             avgFpsEl.textContent = '0';
             detectionCountEl.textContent = '0';
         }
-        
+
         // Clear stats
         function clearStats() {
             totalFrames = 0;
@@ -656,7 +656,7 @@
             detectionCountEl.textContent = '0';
             detectionsListEl.innerHTML = '<div class="empty-state">No detections yet</div>';
         }
-        
+
         // Request camera control (optional - if ESP32-CAM supports PTZ)
         function sendCameraControl(action, value) {
             if (ws && ws.readyState === WebSocket.OPEN) {
@@ -667,14 +667,14 @@
                 }));
             }
         }
-        
+
         // Event listeners
         reconnectBtn.addEventListener('click', reconnect);
         clearStatsBtn.addEventListener('click', clearStats);
-        
+
         // Start connection
         connectWebSocket();
-        
+
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {
             if (e.key === 'r' || e.key === 'R') {
@@ -683,7 +683,7 @@
                 clearStats();
             }
         });
-        
+
         // Log connection info
         console.log('Frontend initialized. WebSocket URL:', WS_URL);
     </script>

@@ -5,10 +5,9 @@ The model is loaded exactly once and reused across frames, avoiding the
 overhead of re-initialising the weights on every inference call.
 """
 
-from ultralytics import YOLO
-
 from app.utils.config import InferenceConfig
 from app.utils.logger import get_logger
+from ultralytics import YOLO
 
 logger = get_logger(__name__)
 

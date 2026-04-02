@@ -109,16 +109,16 @@ class PipelineService {
 
       final detections = await _inference.infer(frameBytes);
       final filtered = _filterDetections(detections);
-      
-      final maxConf = filtered.isEmpty 
-          ? 0.0 
+
+      final maxConf = filtered.isEmpty
+          ? 0.0
           : filtered.map((e) => e.confidence).reduce((a, b) => a > b ? a : b);
 
       final event = _eventLogic.classify(filtered);
 
       final sleepEvidencePresent = _resolveSleepEvidence(filtered);
       String? evidenceUrl;
-      
+
       // Upload for test if enabled and any detection found
       if (_config.cloudinaryEnabled && filtered.isNotEmpty) {
         // Upload every 10th detection frame (to avoid spamming)

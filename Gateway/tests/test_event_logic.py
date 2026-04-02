@@ -1,7 +1,7 @@
 from typing import cast
 
-from app.inference.detect import Detection
 from app.event.logic import EventLogic
+from app.inference.detect import Detection
 from app.utils.config import EventConfig
 
 

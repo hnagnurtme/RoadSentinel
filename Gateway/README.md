@@ -111,4 +111,3 @@ GATEWAY_CAPTURE_SOURCE=esp32 \
 GATEWAY_ESP32_URL=http://<LAN_IP>:8081/stream \
 python -m app.main
 ```
-

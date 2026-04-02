@@ -1,31 +1,34 @@
-from fastapi import APIRouter, FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from interfaces.api.middleware.exception import register_exception_handlers
-from interfaces.api.v1.alert import router as alert_router
-from interfaces.api.v1.user import router as user_router
-from interfaces.api.v1.vehicle import router as vehicle_router
-from interfaces.api.v1.websocket import router as websocket_router
-from shared.config import settings
+import os
+
+import click
+import uvicorn
+
+from core.config import config
 
 
-app = FastAPI(title=settings.APP_NAME)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.CORS_ALLOW_ORIGINS,
-    allow_credentials=settings.CORS_ALLOW_CREDENTIALS,
-    allow_methods=settings.CORS_ALLOW_METHODS,
-    allow_headers=settings.CORS_ALLOW_HEADERS,
+@click.command()
+@click.option(
+    "--env",
+    type=click.Choice(["local", "dev", "prod"], case_sensitive=False),
+    default="local",
 )
-register_exception_handlers(app)
+@click.option(
+    "--debug",
+    type=click.BOOL,
+    is_flag=True,
+    default=False,
+)
+def main(env: str, debug: bool):
+    os.environ["ENV"] = env
+    os.environ["DEBUG"] = str(debug)
+    uvicorn.run(
+        app="app.server:app",
+        host=config.APP_HOST,
+        port=config.APP_PORT,
+        reload=True if config.ENV != "production" else False,
+        workers=1,
+    )
 
-api_v1_router = APIRouter(prefix="/api/v1")
-api_v1_router.include_router(user_router)
-api_v1_router.include_router(alert_router)
-api_v1_router.include_router(vehicle_router)
-api_v1_router.include_router(websocket_router)
-app.include_router(api_v1_router)
 
-
-@app.get("/")
-async def root() -> dict[str, str]:
-    return {"status": "ok"}
+if __name__ == "__main__":
+    main()

@@ -1,13 +1,6 @@
 import pytest
-
-from app.utils.config import (
-    CaptureConfig,
-    EvidenceConfig,
-    EventConfig,
-    InferenceConfig,
-    PreprocessConfig,
-    SenderConfig,
-)
+from app.utils.config import (CaptureConfig, EventConfig, EvidenceConfig,
+                              InferenceConfig, PreprocessConfig, SenderConfig)
 
 
 def test_capture_config_rejects_non_positive_fps() -> None:

@@ -12,7 +12,6 @@ import time
 import cv2
 import numpy as np
 import requests
-
 from app.utils.config import CaptureConfig
 from app.utils.logger import get_logger
 

@@ -15,20 +15,19 @@ import base64
 import json
 import logging
 import sys
-import time
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
 import cv2
-from ultralytics import YOLO
-
 from app.capture.esp32 import ESP32Capture
 from app.evidence.recorder import EvidenceRecorder
 from app.evidence.trigger import SleepWindowTrigger
 from app.utils.config import CONFIG, CaptureConfig, EvidenceConfig
+from ultralytics import YOLO
 
 try:
     import yaml

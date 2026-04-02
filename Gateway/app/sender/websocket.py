@@ -12,10 +12,9 @@ import queue
 import threading
 
 import websockets
-from websockets.exceptions import ConnectionClosed
-
 from app.utils.config import SenderConfig
 from app.utils.logger import get_logger
+from websockets.exceptions import ConnectionClosed
 
 logger = get_logger(__name__)
 

@@ -67,7 +67,7 @@ class InferenceService {
 
     final inputTensor = interpreter.getInputTensor(0);
     final outputTensor = interpreter.getOutputTensor(0);
-    
+
     final inputShape = inputTensor.shape;
     final outputShape = outputTensor.shape;
 
@@ -99,7 +99,7 @@ class InferenceService {
 
     final detections = _decodeAndApplyNms(output, outputShape);
     detections.sort((a, b) => b.confidence.compareTo(a.confidence));
-    
+
     if (detections.length <= _config.inferenceMaxDetections) {
       return detections;
     }
@@ -150,7 +150,7 @@ class InferenceService {
     final isNCHW = shape.length == 4 && shape[1] == 3;
     final h = shape[isNCHW ? 2 : 1];
     final w = shape[isNCHW ? 3 : 2];
-    
+
     final elementSize = type == TensorType.uint8 ? 1 : 4;
     final buffer = Uint8List(1 * h * w * 3 * elementSize);
     final byteData = ByteData.view(buffer.buffer);
@@ -166,7 +166,7 @@ class InferenceService {
               1 => pixel.g,
               _ => pixel.b,
             };
-            
+
             if (type == TensorType.uint8) {
               byteData.setUint8(offset, val.toInt());
               offset += 1;
@@ -288,16 +288,16 @@ class InferenceService {
     final candidates = <Detection>[];
     for (final row in rows) {
       if (row.length < 6) continue;
-      
+
       // SSD Output formats can vary. Common patterns:
       // Pattern A: [ymin, xmin, ymax, xmax, score, class] (Most common)
       // Pattern B: [ymin, xmin, ymax, xmax, class, score]
       // Pattern C: [xmin, ymin, xmax, ymax, score, class]
-      
+
       // Determine which column is class and which is score
       double score;
       int classId;
-      
+
       if (row[4] > 1.0 && row[5] <= 1.0) {
         // row[4] is class, row[5] is score
         classId = row[4].toInt();
@@ -320,7 +320,7 @@ class InferenceService {
 
       // If x1 > x2 or y1 > y2, it might be swapped or different format
       // But we'll stick to Pattern A for now as it matches the standard
-      
+
       final normalized = _isNormalizedBox(x1, y1, x2, y2);
       final scale = normalized ? _config.modelInputSize.toDouble() : 1.0;
 

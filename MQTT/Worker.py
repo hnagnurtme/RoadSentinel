@@ -7,36 +7,37 @@ Tích hợp AI detection với high-quality streaming.
 macOS safe: OpenCV chạy trên main thread, MQTT trên background thread.
 """
 
-import paho.mqtt.client as mqtt
-import cv2
-import numpy as np
+import os
+import queue
 import ssl
 import threading
-import queue
 import time
-import os
 from collections import deque
-from ultralytics import YOLO
+
+import cv2
+import numpy as np
+import paho.mqtt.client as mqtt
 import torch
+from ultralytics import YOLO
 
 # ============================================================
 #  CẤU HÌNH MQTT
 # ============================================================
-MQTT_BROKER   = "fe4494bed59247ae9640160c900bf3f1.s1.eu.hivemq.cloud"
-MQTT_PORT     = 8883
-MQTT_USER     = "anhnon"
-MQTT_PASS     = "Password123"
+MQTT_BROKER = "fe4494bed59247ae9640160c900bf3f1.s1.eu.hivemq.cloud"
+MQTT_PORT = 8883
+MQTT_USER = "anhnon"
+MQTT_PASS = "Password123"
 
 # ✅ Subscribe wildcard để nhận tất cả camera
 # Topic pattern: roadsentinel/cam/<device_id>/jpeg
-MQTT_TOPIC    = "roadsentinel/cam/+/jpeg"
+MQTT_TOPIC = "roadsentinel/cam/+/jpeg"
 
 QUEUE_MAX_SIZE = 2  # Giảm buffer để giảm lag, luôn lấy frame mới
 
 # ============================================================
 #  CẤU HÌNH AI MODEL
 # ============================================================
-MODEL_PATH = '../AI/model/best_v2.pt'
+MODEL_PATH = "../AI/model/best_v2.pt"
 CONFIDENCE_THRESHOLD = 0.3
 SKIP_FRAMES = 0  # Xử lý mọi frame (1 FPS nên không cần skip)
 RESIZE_WIDTH = 640  # Tăng lên 640px cho HD quality detection
@@ -54,6 +55,7 @@ stats_lock = threading.Lock()
 model = None
 device = None
 
+
 # ============================================================
 #  MQTT CALLBACKS
 # ============================================================
@@ -65,9 +67,11 @@ def on_connect(client, userdata, flags, rc):
     else:
         print(f"❌ Lỗi kết nối rc={rc}")
 
+
 def on_disconnect(client, userdata, rc):
     if rc != 0:
         print(f"⚠️  MQTT mất kết nối (rc={rc}) – tự kết nối lại...")
+
 
 def on_message(client, userdata, msg):
     """
@@ -84,7 +88,7 @@ def on_message(client, userdata, msg):
         device_id = msg.topic.split("/")[2]
     except IndexError:
         device_id = "unknown"
-    
+
     # Log mỗi 10 frames để không spam
     if recv_count % 10 == 1:
         print(f"📥 [{device_id}] JPEG size: {len(msg.payload)/1024:.1f}KB")
@@ -103,6 +107,7 @@ def on_message(client, userdata, msg):
     except queue.Full:
         pass
 
+
 # ============================================================
 #  STATS LOGGER
 # ============================================================
@@ -110,8 +115,16 @@ def stats_logger(stop_event: threading.Event):
     while not stop_event.is_set():
         time.sleep(5)
         with stats_lock:
-            r, d, x, det = stats["received"], stats["displayed"], stats["dropped"], stats["detected"]
-        print(f"📊 Recv:{r:5d} | Disp:{d:5d} | Drop:{x:4d} | Det:{det:4d} | Queue:{frame_queue.qsize()}/{QUEUE_MAX_SIZE}")
+            r, d, x, det = (
+                stats["received"],
+                stats["displayed"],
+                stats["dropped"],
+                stats["detected"],
+            )
+        print(
+            f"📊 Recv:{r:5d} | Disp:{d:5d} | Drop:{x:4d} | Det:{det:4d} | Queue:{frame_queue.qsize()}/{QUEUE_MAX_SIZE}"
+        )
+
 
 # ============================================================
 #  AI MODEL LOADER
@@ -119,40 +132,43 @@ def stats_logger(stop_event: threading.Event):
 def load_model():
     """Load YOLO model với GPU/CPU auto-detect"""
     global model, device
-    
+
     if not os.path.exists(MODEL_PATH):
         print(f"❌ LỖI: Không tìm thấy model '{MODEL_PATH}'!")
         return False
-    
+
     print("⏳ Đang load AI model...")
     try:
         model = YOLO(MODEL_PATH)
-        
+
         # Tự động detect device (GPU hoặc CPU)
         if torch.cuda.is_available():
-            device = 'cuda'
+            device = "cuda"
             print("🚀 Sử dụng GPU (CUDA)")
         elif torch.backends.mps.is_available():
-            device = 'mps'
+            device = "mps"
             print("🚀 Sử dụng GPU (Apple Silicon)")
         else:
-            device = 'cpu'
+            device = "cpu"
             print("💻 Sử dụng CPU")
-        
+
         model.to(device)
         model.fuse()  # Tối ưu hóa
-        
+
         # Warmup
         print("🔥 Warming up model...")
         dummy = np.zeros((640, 640, 3), dtype=np.uint8)
-        _ = model.predict(source=dummy, conf=CONFIDENCE_THRESHOLD, verbose=False, device=device)
-        
+        _ = model.predict(
+            source=dummy, conf=CONFIDENCE_THRESHOLD, verbose=False, device=device
+        )
+
         print("✅ Model đã sẵn sàng!")
         return True
-        
+
     except Exception as e:
         print(f"❌ Lỗi load model: {e}")
         return False
+
 
 # ============================================================
 #  MAIN THREAD – OpenCV render + AI Detection
@@ -162,7 +178,7 @@ def main():
     print("  RoadSentinel Worker v4  –  Binary JPEG + YOLO Detection")
     print("  Expected: VGA (640x480) HD JPEG frames @ 1 FPS")
     print("=" * 65)
-    
+
     # Load AI Model trước
     if not load_model():
         print("❌ Không thể load model. Thoát.")
@@ -180,9 +196,9 @@ def main():
     mqttc.tls_set(cert_reqs=ssl.CERT_NONE)
     mqttc.tls_insecure_set(True)
     mqttc.reconnect_delay_set(min_delay=1, max_delay=10)
-    mqttc.on_connect    = on_connect
+    mqttc.on_connect = on_connect
     mqttc.on_disconnect = on_disconnect
-    mqttc.on_message    = on_message
+    mqttc.on_message = on_message
 
     mqttc.connect(MQTT_BROKER, MQTT_PORT, keepalive=30)
     mqttc.loop_start()  # MQTT chạy background thread
@@ -210,7 +226,7 @@ def main():
             try:
                 device_id, jpeg_bytes = frame_queue.get(timeout=0.05)
             except queue.Empty:
-                if cv2.waitKey(1) & 0xFF == ord('q'):
+                if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
                 continue
 
@@ -225,69 +241,77 @@ def main():
                     raise ValueError(f"JPEG quá nhỏ: {jpeg_size} bytes")
                 if jpeg_size > 100000:  # Cảnh báo nếu quá lớn
                     print(f"⚠️  JPEG lớn bất thường: {jpeg_size/1024:.1f}KB")
-                
+
                 np_arr = np.frombuffer(jpeg_bytes, dtype=np.uint8)
-                frame  = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
-                
+                frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+
                 if frame is None:
-                    raise ValueError(f"imdecode failed – JPEG corrupt? Size: {jpeg_size} bytes")
-                
+                    raise ValueError(
+                        f"imdecode failed – JPEG corrupt? Size: {jpeg_size} bytes"
+                    )
+
                 # Validate frame shape
                 if frame.shape[0] < 10 or frame.shape[1] < 10:
                     raise ValueError(f"Frame shape invalid: {frame.shape}")
-                    
+
             except Exception as e:
                 with stats_lock:
                     stats["dropped"] += 1
-                print(f"⚠️  Decode lỗi [{device_id}]: {e} (size: {len(jpeg_bytes)} bytes)")
+                print(
+                    f"⚠️  Decode lỗi [{device_id}]: {e} (size: {len(jpeg_bytes)} bytes)"
+                )
                 continue
 
             # ---- YOLO DETECTION ----
-            should_process = (frame_count % (SKIP_FRAMES + 1) == 0) and detection_enabled
-            
+            should_process = (
+                frame_count % (SKIP_FRAMES + 1) == 0
+            ) and detection_enabled
+
             if should_process and model is not None:
                 try:
                     detect_start = time.time()
-                    
+
                     height, width = frame.shape[:2]
-                    
+
                     # Resize để tăng tốc - luôn resize về RESIZE_WIDTH
                     scale = RESIZE_WIDTH / width
-                    frame_resized = cv2.resize(frame, None, fx=scale, fy=scale, 
-                                              interpolation=cv2.INTER_AREA)  # INTER_AREA nhanh hơn
-                    
+                    frame_resized = cv2.resize(
+                        frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA
+                    )  # INTER_AREA nhanh hơn
+
                     # Detection với half precision nếu có GPU
                     results = model.predict(
-                        source=frame_resized, 
+                        source=frame_resized,
                         conf=CONFIDENCE_THRESHOLD,
                         verbose=False,
                         device=device,
-                        half=(device != 'cpu')  # FP16 trên GPU
+                        half=(device != "cpu"),  # FP16 trên GPU
                     )
-                    
+
                     # Vẽ bounding boxes
                     annotated_frame = results[0].plot()
-                    
+
                     # Scale về kích thước gốc
-                    annotated_frame = cv2.resize(annotated_frame, (width, height),
-                                                interpolation=cv2.INTER_LINEAR)
-                    
+                    annotated_frame = cv2.resize(
+                        annotated_frame, (width, height), interpolation=cv2.INTER_LINEAR
+                    )
+
                     # Lưu kết quả
                     current_annotated_frame = annotated_frame
-                    
+
                     # Đếm số objects detected
                     num_detections = len(results[0].boxes)
                     with stats_lock:
                         stats["detected"] += num_detections
-                    
+
                     # Đo thời gian
                     last_detection_time = (time.time() - detect_start) * 1000  # ms
-                    
+
                 except Exception as e:
                     print(f"⚠️ Lỗi detection: {e}")
                     current_annotated_frame = frame.copy()
                     last_detection_time = 0
-            
+
             # Hiển thị frame đã detect (hoặc frame gốc nếu chưa detect)
             if detection_enabled and current_annotated_frame is not None:
                 display_frame = current_annotated_frame.copy()
@@ -305,25 +329,41 @@ def main():
 
             # ---- HUD với info AI ----
             with stats_lock:
-                recv  = stats["received"]
+                recv = stats["received"]
                 drops = stats["dropped"]
                 det_count = stats["detected"]
 
             h, w = display_frame.shape[:2]
-            
+
             # Background cho HUD
             overlay = display_frame.copy()
             cv2.rectangle(overlay, (0, 0), (w, 115), (0, 0, 0), -1)
             cv2.addWeighted(overlay, 0.5, display_frame, 0.5, 0, display_frame)
 
             # Line 1: Camera info
-            cv2.putText(display_frame, f"CAM: {device_id}  |  {w}x{h}",
-                        (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 255, 200), 2, cv2.LINE_AA)
-            
+            cv2.putText(
+                display_frame,
+                f"CAM: {device_id}  |  {w}x{h}",
+                (10, 25),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (200, 255, 200),
+                2,
+                cv2.LINE_AA,
+            )
+
             # Line 2: FPS và stats
-            cv2.putText(display_frame, f"FPS: {fps:5.1f}  |  Recv:{recv}  Drop:{drops}",
-                        (10, 52), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (100, 200, 255), 2, cv2.LINE_AA)
-            
+            cv2.putText(
+                display_frame,
+                f"FPS: {fps:5.1f}  |  Recv:{recv}  Drop:{drops}",
+                (10, 52),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (100, 200, 255),
+                2,
+                cv2.LINE_AA,
+            )
+
             # Line 3: AI Detection info
             if detection_enabled:
                 status = "DETECTING" if should_process else "SKIP"
@@ -332,19 +372,35 @@ def main():
             else:
                 status_color = (0, 0, 255)
                 ai_text = f"AI: DISABLED  |  Objects: {det_count}"
-            
-            cv2.putText(display_frame, ai_text,
-                        (10, 79), cv2.FONT_HERSHEY_SIMPLEX, 0.6, status_color, 2, cv2.LINE_AA)
-            
+
+            cv2.putText(
+                display_frame,
+                ai_text,
+                (10, 79),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                status_color,
+                2,
+                cv2.LINE_AA,
+            )
+
             # Line 4: Detection timing (nếu có)
             if last_detection_time > 0:
                 timing_text = f"Detect Time: {last_detection_time:.0f}ms  |  Skip: 1/{SKIP_FRAMES+1}"
-                cv2.putText(display_frame, timing_text,
-                            (10, 106), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 100), 1, cv2.LINE_AA)
+                cv2.putText(
+                    display_frame,
+                    timing_text,
+                    (10, 106),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (255, 255, 100),
+                    1,
+                    cv2.LINE_AA,
+                )
 
             # Warning border nếu drop rate cao
             if drops / max(recv, 1) > 0.1:
-                cv2.rectangle(display_frame, (0, 0), (w-1, h-1), (0, 0, 255), 3)
+                cv2.rectangle(display_frame, (0, 0), (w - 1, h - 1), (0, 0, 255), 3)
 
             cv2.imshow(window_name, display_frame)
             with stats_lock:
@@ -352,27 +408,29 @@ def main():
 
             # ---- XỬ LÝ PHÍM ----
             key = cv2.waitKey(1) & 0xFF
-            
-            if key == ord('q'):
+
+            if key == ord("q"):
                 break
-            elif key == ord('d'):
+            elif key == ord("d"):
                 # Toggle AI detection
                 detection_enabled = not detection_enabled
                 status = "BẬT" if detection_enabled else "TẮT"
                 print(f"🤖 AI Detection: {status}")
-            elif key == ord('s'):
+            elif key == ord("s"):
                 # Lưu ảnh hiện tại với full resolution
                 timestamp = time.strftime("%Y%m%d_%H%M%S")
-                
+
                 # Lưu cả frame gốc và frame đã detect
-                raw_filename = f'raw_{device_id}_{timestamp}.jpg'
+                raw_filename = f"raw_{device_id}_{timestamp}.jpg"
                 cv2.imwrite(raw_filename, frame)
                 print(f"📸 Lưu RAW: {raw_filename} ({frame.shape[1]}x{frame.shape[0]})")
-                
+
                 if current_annotated_frame is not None:
-                    det_filename = f'detected_{device_id}_{timestamp}.jpg'
+                    det_filename = f"detected_{device_id}_{timestamp}.jpg"
                     cv2.imwrite(det_filename, current_annotated_frame)
-                    print(f"🎯 Lưu DETECTED: {det_filename} ({current_annotated_frame.shape[1]}x{current_annotated_frame.shape[0]})")
+                    print(
+                        f"🎯 Lưu DETECTED: {det_filename} ({current_annotated_frame.shape[1]}x{current_annotated_frame.shape[0]})"
+                    )
 
     except KeyboardInterrupt:
         print("\n🛑 Ctrl+C – đang dừng...")
@@ -382,6 +440,7 @@ def main():
         mqttc.disconnect()
         cv2.destroyAllWindows()
         print("✅ Worker dừng sạch.")
+
 
 if __name__ == "__main__":
     main()

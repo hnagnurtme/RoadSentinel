@@ -8,11 +8,10 @@ don't need to interact with the raw ultralytics Result object.
 from typing import TypedDict
 
 import numpy as np
-from ultralytics.engine.results import Results
-
 from app.inference.model import get_model
 from app.utils.config import InferenceConfig
 from app.utils.logger import get_logger
+from ultralytics.engine.results import Results
 
 logger = get_logger(__name__)
 
@@ -20,10 +19,10 @@ logger = get_logger(__name__)
 class Detection(TypedDict):
     """A single YOLO object detection result."""
 
-    label: str        # Human-readable class name (e.g. "cell phone")
-    class_id: int     # Integer class ID from the model
-    confidence: float # Detection confidence [0, 1]
-    bbox: list[float] # [x1, y1, x2, y2] in pixel coordinates
+    label: str  # Human-readable class name (e.g. "cell phone")
+    class_id: int  # Integer class ID from the model
+    confidence: float  # Detection confidence [0, 1]
+    bbox: list[float]  # [x1, y1, x2, y2] in pixel coordinates
 
 
 def run_inference(frame: np.ndarray, cfg: InferenceConfig) -> list[Detection]:
@@ -68,8 +67,6 @@ def run_inference(frame: np.ndarray, cfg: InferenceConfig) -> list[Detection]:
                     bbox=bbox,
                 )
             )
-            logger.debug(
-                "Detected: %s  conf=%.2f  bbox=%s", label, confidence, bbox
-            )
+            logger.debug("Detected: %s  conf=%.2f  bbox=%s", label, confidence, bbox)
 
     return detections
