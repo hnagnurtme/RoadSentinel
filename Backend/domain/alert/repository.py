@@ -18,3 +18,7 @@ class AlertRepository(ABC):
         self, limit: int = 20, driver_id: uuid.UUID | None = None
     ) -> list[AlertEntity]:
         raise NotImplementedError
+
+    @abstractmethod
+    def delete(self, alert_id: uuid.UUID) -> AlertEntity | None:
+        raise NotImplementedError

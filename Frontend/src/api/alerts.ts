@@ -18,3 +18,15 @@ export async function listAlerts(limit = 20, driverId?: string): Promise<Alert[]
 
   return normalizeAlertPayload(response.data).map(mapAlertApiDto);
 }
+
+export async function getAlert(alertId: string): Promise<Alert> {
+  const url = `${env.apiBaseUrl}/alerts/${alertId}`;
+  const response = await requestJson<ApiEnvelope<AlertApiDto>>(url, { method: "GET" });
+  return mapAlertApiDto(response.data);
+}
+
+export async function deleteAlert(alertId: string): Promise<Alert> {
+  const url = `${env.apiBaseUrl}/alerts/${alertId}`;
+  const response = await requestJson<ApiEnvelope<AlertApiDto>>(url, { method: "DELETE" });
+  return mapAlertApiDto(response.data);
+}

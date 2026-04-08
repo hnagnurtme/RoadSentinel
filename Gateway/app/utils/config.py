@@ -212,7 +212,7 @@ class EvidenceConfig:
     evidence_dir: str = "evidence"
 
     # Save one clip when sleeping lasts this many consecutive seconds.
-    sleep_evidence_seconds: int = 8
+    sleep_evidence_seconds: int = 4
 
     # Trigger only when sleeping occupancy in the 10s window passes this ratio.
     sleep_trigger_ratio: float = 0.6

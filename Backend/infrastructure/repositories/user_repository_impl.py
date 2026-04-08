@@ -70,3 +70,12 @@ class UserRepositoryImpl(UserRepository):
         if not row:
             return None
         return self._to_entity(row)
+
+    def list_all(self) -> list[UserEntity]:
+        stmt = (
+            select(User)
+            .where(User._deleted_at.is_(None))
+            .order_by(User._created_at.desc())
+        )
+        rows = self.db.execute(stmt).scalars().all()
+        return [self._to_entity(row) for row in rows]

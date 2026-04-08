@@ -5,8 +5,10 @@ from application.user.commands.create_user import CreateUserCommand
 from application.user.commands.create_user_handler import CreateUserHandler
 from application.user.queries.get_user import GetUserQuery
 from application.user.queries.get_user_handler import GetUserHandler
+from application.user.queries.list_users import ListUsersQuery
+from application.user.queries.list_users_handler import ListUsersHandler
 from application.user.user_dto import CreateUserRequest, UserResponse
-from interfaces.api.deps import get_create_user_handler, get_get_user_handler
+from interfaces.api.deps import get_create_user_handler, get_get_user_handler, get_list_users_handler
 from interfaces.api.response import success_response
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -59,6 +61,14 @@ def create_user(
         )
     )
     return success_response(data=_to_user_response(user).model_dump(by_alias=True))
+
+
+@router.get("")
+def list_users(
+    handler: ListUsersHandler = Depends(get_list_users_handler),
+):
+    users = handler.handle(ListUsersQuery())
+    return success_response(data=[_to_user_response(user).model_dump(by_alias=True) for user in users])
 
 
 @router.get("/{user_id}")

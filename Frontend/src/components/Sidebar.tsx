@@ -1,12 +1,97 @@
-import { LayoutDashboard, Car, Users, AlertTriangle, Settings, HelpCircle, LogOut } from "lucide-react";
+import { useState, useEffect } from "react";
+import { LayoutDashboard, Car, Users, AlertTriangle, Settings, HelpCircle, LogOut, Monitor, ChevronDown, ChevronRight, Wifi, WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AppView } from "@/App";
 
-interface SidebarProps {
-  currentView: "dashboard" | "incident" | "alerts";
-  onNavigate: (view: "dashboard" | "incident" | "alerts") => void;
+interface Device {
+  id: string;
+  label: string;
+  online: boolean;
 }
 
-export function Sidebar({ currentView, onNavigate }: SidebarProps) {
+interface SidebarProps {
+  currentView: AppView;
+  onNavigate: (view: AppView) => void;
+  onOpenMonitor?: (deviceId: string) => void;
+}
+
+const WS_BASE = (import.meta.env.VITE_WS_ALERTS_URL as string | undefined)
+  ? (import.meta.env.VITE_WS_ALERTS_URL as string).replace(/\/alerts$/, "")
+  : "ws://localhost:8000/api/v1/ws";
+
+export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps) {
+  const [monitorOpen, setMonitorOpen] = useState(false);
+  const [devices, setDevices] = useState<Device[]>([
+    { id: "esp32-cam", label: "ESP32-CAM", online: false },
+  ]);
+
+  // Lightweight status probe: connect to /ws/frontend and listen for pong
+  useEffect(() => {
+    if (currentView === "monitor") {
+      setMonitorOpen(true);
+    }
+  }, [currentView]);
+
+  useEffect(() => {
+    if (!monitorOpen) return;
+
+    let ws: WebSocket | null = null;
+    let pingInterval: ReturnType<typeof setInterval> | null = null;
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const connect = () => {
+      ws = new WebSocket(`${WS_BASE}/frontend`);
+
+      ws.addEventListener("open", () => {
+        ws!.send(JSON.stringify({ type: "ping" }));
+        pingInterval = setInterval(() => {
+          if (ws?.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "ping" }));
+          }
+        }, 8000);
+      });
+
+      ws.addEventListener("message", (evt) => {
+        try {
+          const msg = JSON.parse(evt.data);
+          if (msg.type === "pong") {
+            const deviceId: string = msg.device ?? "esp32-cam";
+            setDevices([
+              { id: deviceId, label: deviceId.toUpperCase(), online: !!msg.camera },
+            ]);
+          }
+        } catch { /* ignore */ }
+      });
+
+      ws.addEventListener("close", () => {
+        if (pingInterval) clearInterval(pingInterval);
+        reconnectTimeout = setTimeout(connect, 4000);
+      });
+
+      ws.addEventListener("error", () => {
+        ws?.close();
+      });
+    };
+
+    connect();
+
+    return () => {
+      if (pingInterval) clearInterval(pingInterval);
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      ws?.close();
+    };
+  }, [monitorOpen]);
+
+  const handleMonitorClick = () => {
+    setMonitorOpen((prev: boolean) => !prev);
+    onNavigate("monitor");
+  };
+
+  const handleDeviceSelect = (deviceId: string) => {
+    onOpenMonitor?.(deviceId);
+    onNavigate("monitor");
+  };
+
   return (
     <aside className="fixed left-0 top-0 h-full flex flex-col p-4 gap-2 border-r border-surface-container-high bg-surface-container-lowest w-64 z-50">
       <div className="mb-8 px-2 py-2">
@@ -77,6 +162,65 @@ export function Sidebar({ currentView, onNavigate }: SidebarProps) {
           <AlertTriangle className={cn("w-5 h-5", currentView === "alerts" && "fill-current")} />
           <span className="text-sm">Alerts</span>
         </button>
+
+        {/* ── Monitor nav item ──────────────────────────────────────────── */}
+        <button
+          onClick={handleMonitorClick}
+          className={cn(
+            "flex items-center gap-3 px-4 py-2.5 rounded transition-all w-full text-left",
+            currentView === "monitor"
+              ? "text-primary bg-surface-container font-bold"
+              : "text-secondary hover:bg-surface-container-low font-medium"
+          )}
+        >
+          <Monitor className="w-5 h-5" />
+          <span className="text-sm flex-1">Monitor</span>
+          {monitorOpen ? (
+            <ChevronDown className="w-4 h-4 opacity-50" />
+          ) : (
+            <ChevronRight className="w-4 h-4 opacity-50" />
+          )}
+        </button>
+
+        {/* ── Device list (collapsible) ─────────────────────────────────── */}
+        {monitorOpen && (
+          <div className="ml-4 pl-3 border-l-2 border-surface-container-high flex flex-col gap-0.5 py-1 transition-all">
+            {devices.map((device) => (
+              <button
+                key={device.id}
+                onClick={() => handleDeviceSelect(device.id)}
+                className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-surface-container-low transition-all w-full text-left group"
+              >
+                {device.online ? (
+                  <span className="relative flex h-2 w-2 flex-shrink-0">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                  </span>
+                ) : (
+                  <span className="h-2 w-2 rounded-full bg-outline/40 flex-shrink-0" />
+                )}
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs font-bold text-primary truncate">{device.label}</span>
+                  <span className="text-[10px] text-secondary">
+                    {device.online ? (
+                      <span className="flex items-center gap-1 text-emerald-600">
+                        <Wifi className="w-2.5 h-2.5" /> Live
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-outline">
+                        <WifiOff className="w-2.5 h-2.5" /> Offline
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <span className="ml-auto text-[9px] font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-wide">
+                  Connect
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+
         <button className="flex items-center gap-3 px-4 py-2.5 text-secondary hover:bg-surface-container-low rounded transition-all w-full text-left">
           <Settings className="w-5 h-5" />
           <span className="text-sm font-medium">Settings</span>

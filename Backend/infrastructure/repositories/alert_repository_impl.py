@@ -1,5 +1,6 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from datetime import datetime
 import uuid
 
 from domain.alert.entities import AlertEntity
@@ -47,7 +48,7 @@ class AlertRepositoryImpl(AlertRepository):
         return self._to_entity(row)
 
     def get_by_id(self, alert_id: uuid.UUID) -> AlertEntity | None:
-        stmt = select(Alert).where(Alert._id == alert_id)
+        stmt = select(Alert).where(Alert._id == alert_id, Alert._deleted_at.is_(None))
         row = self.db.execute(stmt).scalar_one_or_none()
         if not row:
             return None
@@ -56,9 +57,26 @@ class AlertRepositoryImpl(AlertRepository):
     def list(
         self, limit: int = 20, driver_id: uuid.UUID | None = None
     ) -> list[AlertEntity]:
-        stmt = select(Alert).order_by(Alert._created_at.desc()).limit(limit)
+        stmt = (
+            select(Alert)
+            .where(Alert._deleted_at.is_(None))
+            .order_by(Alert._created_at.desc())
+            .limit(limit)
+        )
         if driver_id is not None:
             stmt = stmt.where(Alert.driver_id == driver_id)
 
         rows = self.db.execute(stmt).scalars().all()
         return [self._to_entity(row) for row in rows]
+
+    def delete(self, alert_id: uuid.UUID) -> AlertEntity | None:
+        stmt = select(Alert).where(Alert._id == alert_id, Alert._deleted_at.is_(None))
+        row = self.db.execute(stmt).scalar_one_or_none()
+        if not row:
+            return None
+
+        row._deleted_at = datetime.utcnow()
+        self.db.add(row)
+        self.db.commit()
+        self.db.refresh(row)
+        return self._to_entity(row)

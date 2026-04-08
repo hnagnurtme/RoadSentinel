@@ -9,7 +9,7 @@ static const char* WIFI_PASS = "987654321";
 
 // ─── FastAPI VPS ──────────────────────────────────────────────────────────────
 // Đổi thành IP/domain VPS của bạn và port FastAPI
-static const char*    WS_HOST = "192.168.1.32";
+static const char*    WS_HOST = "192.168.1.209";
 static const uint16_t WS_PORT = 8000;
 static const char*    WS_PATH = "/ws/camera";   // endpoint WebSocket trên FastAPI
 

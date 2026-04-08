@@ -15,7 +15,7 @@ install:
 	{{venv_python}} -m pip install -r requirements.txt
 
 run:
-	{{venv_python}} -m uvicorn main:app --reload
+	{{venv_python}} -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 migrate message="auto":
 	{{venv_python}} -m alembic revision --autogenerate -m "{{message}}"
