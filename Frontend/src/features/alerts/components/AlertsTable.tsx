@@ -7,6 +7,7 @@ interface AlertsTableProps {
   isLoading: boolean;
   errorMessage: string | null;
   onReview: (alert: Alert) => void;
+  onDelete: (alertId: string) => void;
 }
 
 function formatTimestamp(value: string | null): string {
@@ -33,7 +34,7 @@ function plateNumber(alert: Alert): string {
   return alert.vehicle?.plateNumber ?? alert.vehicleId ?? alert.deviceId;
 }
 
-export function AlertsTable({ alerts, newAlertIds, isLoading, errorMessage, onReview }: AlertsTableProps) {
+export function AlertsTable({ alerts, newAlertIds, isLoading, errorMessage, onReview, onDelete }: AlertsTableProps) {
   return (
     <section className="bg-surface-container-lowest rounded-xl border border-outline-variant/30 shadow-sm overflow-hidden mb-12">
       <div className="px-6 py-4 border-b border-outline-variant/20 flex justify-between items-center bg-surface-container-low/50">
@@ -100,16 +101,23 @@ export function AlertsTable({ alerts, newAlertIds, isLoading, errorMessage, onRe
                     <div className="flex justify-center gap-2">
                       <button
                         type="button"
-                        onClick={() => onReview(alert)}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onReview(alert);
+                        }}
                         className="bg-primary text-on-primary text-[9px] font-bold uppercase px-3 py-1.5 rounded hover:opacity-90 shadow-sm transition-opacity"
                       >
                         Review
                       </button>
                       <button
                         type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onDelete(alert.id);
+                        }}
                         className="ring-1 ring-outline-variant/15 text-primary text-[9px] font-bold uppercase px-3 py-1.5 rounded hover:bg-surface-container-low transition-colors bg-surface-container-lowest"
                       >
-                        Log
+                        Delete
                       </button>
                     </div>
                   </td>

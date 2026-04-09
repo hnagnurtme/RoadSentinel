@@ -2,6 +2,8 @@ from fastapi import APIRouter, Depends, Query
 import uuid
 
 from application.alert.alert_dto import AlertResponse, CreateAlertRequest
+from application.alert.commands.delete_alert import DeleteAlertCommand
+from application.alert.commands.delete_alert_handler import DeleteAlertHandler
 from application.user.user_dto import UserResponse
 from application.vehicle.vehicle_dto import VehicleResponse
 from application.alert.commands.create_alert import CreateAlertCommand
@@ -12,6 +14,7 @@ from application.alert.queries.list_alerts import ListAlertsQuery
 from application.alert.queries.list_alerts_handler import ListAlertsHandler
 from interfaces.api.deps import (
     get_create_alert_handler,
+    get_delete_alert_handler,
     get_get_alert_handler,
     get_list_alerts_handler,
     get_user_repository,
@@ -162,6 +165,29 @@ def get_alert(
             by_alias=True
         )
     )
+
+
+@router.delete("/{alert_id}")
+async def delete_alert(
+    alert_id: uuid.UUID,
+    handler: DeleteAlertHandler = Depends(get_delete_alert_handler),
+    user_repository: UserRepositoryImpl = Depends(get_user_repository),
+    vehicle_repository: VehicleRepositoryImpl = Depends(get_vehicle_repository),
+):
+    alert = handler.handle(DeleteAlertCommand(alert_id=alert_id))
+    user, vehicle = _resolve_alert_relations(
+        alert=alert,
+        user_repository=user_repository,
+        vehicle_repository=vehicle_repository,
+    )
+    data = _to_alert_response(alert, user=user, vehicle=vehicle).model_dump(by_alias=True)
+    await alerts_ws_manager.broadcast(
+        {
+            "event": "alert.deleted",
+            "data": data,
+        }
+    )
+    return success_response(data=data)
 
 
 @router.get("")

@@ -4,5 +4,10 @@ SQLAlchemy==2.0.43
 alembic==1.16.5
 pydantic==2.11.9
 pydantic-settings==2.10.1
+PyYAML>=6.0
 python-dotenv==1.1.1
 psycopg2-binary==2.9.10
+ultralytics>=8.0.0
+opencv-python-headless>=4.8.0
+numpy>=1.24.0
+cloudinary>=1.41.0

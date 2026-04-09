@@ -16,3 +16,7 @@ class UserRepository(ABC):
     @abstractmethod
     def get_by_email(self, email: str) -> UserEntity | None:
         raise NotImplementedError
+
+    @abstractmethod
+    def list_all(self) -> list[UserEntity]:
+        raise NotImplementedError

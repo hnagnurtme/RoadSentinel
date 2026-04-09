@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { listAlerts } from "@/api/alerts";
+import { deleteAlert as deleteAlertApi, listAlerts } from "@/api/alerts";
 import { env } from "@/config/env";
 import { Alert, AlertApiDto, mapAlertApiDto } from "@/types/alert";
 
@@ -10,6 +10,11 @@ interface UseAlertsFeedOptions {
 
 interface AlertCreatedEvent {
     event: "alert.created";
+    data: AlertApiDto;
+}
+
+interface AlertDeletedEvent {
+    event: "alert.deleted";
     data: AlertApiDto;
 }
 
@@ -95,7 +100,7 @@ export function useAlertsFeed ( options: UseAlertsFeedOptions = {} ) {
     const newBadgeTimersRef = useRef<Map<string, number>>( new Map() );
 
     const markAlertAsNew = ( alertId: string ) => {
-        setNewAlertIds( ( previous ) => {
+        setNewAlertIds( ( previous: Set<string> ) => {
             if ( previous.has( alertId ) ) {
                 return previous;
             }
@@ -111,7 +116,7 @@ export function useAlertsFeed ( options: UseAlertsFeedOptions = {} ) {
         }
 
         const timerId = window.setTimeout( () => {
-            setNewAlertIds( ( previous ) => {
+            setNewAlertIds( ( previous: Set<string> ) => {
                 if ( !previous.has( alertId ) ) {
                     return previous;
                 }
@@ -124,6 +129,30 @@ export function useAlertsFeed ( options: UseAlertsFeedOptions = {} ) {
         }, NEW_ALERT_HIGHLIGHT_MS );
 
         newBadgeTimersRef.current.set( alertId, timerId );
+    };
+
+    const removeAlertFromState = ( alertId: string ) => {
+        setAlerts( ( current: Alert[] ) => current.filter( ( item ) => item.id !== alertId ) );
+        knownAlertIdsRef.current.delete( alertId );
+        setNewAlertIds( ( previous: Set<string> ) => {
+            if ( !previous.has( alertId ) ) {
+                return previous;
+            }
+            const next = new Set( previous );
+            next.delete( alertId );
+            return next;
+        } );
+    };
+
+    const deleteAlert = async ( alertId: string ) => {
+        setErrorMessage( null );
+        try {
+            await deleteAlertApi( alertId );
+            removeAlertFromState( alertId );
+        } catch ( error ) {
+            const message = error instanceof Error ? error.message : "Cannot delete alert";
+            setErrorMessage( `Failed to delete alert: ${ message }` );
+        }
     };
 
     const refreshFromApi = async ( force = false ) => {
@@ -202,7 +231,7 @@ export function useAlertsFeed ( options: UseAlertsFeedOptions = {} ) {
                 }
 
                 // Clear stale stream errors when the socket is healthy again.
-                setErrorMessage( ( previous ) =>
+                setErrorMessage( ( previous: string | null ) =>
                     previous === "WebSocket connection error for alerts stream" ? null : previous,
                 );
 
@@ -222,13 +251,19 @@ export function useAlertsFeed ( options: UseAlertsFeedOptions = {} ) {
                 }
 
                 try {
-                    const payload = JSON.parse( event.data ) as AlertCreatedEvent | AlertEnvelopePayload;
+                    const payload = JSON.parse( event.data ) as AlertCreatedEvent | AlertDeletedEvent | AlertEnvelopePayload;
 
                     if ( "event" in payload && payload.event === "alert.created" ) {
                         const incoming = mapAlertApiDto( payload.data );
                         knownAlertIdsRef.current.add( incoming.id );
                         markAlertAsNew( incoming.id );
-                        setAlerts( ( current ) => mergeLatestAlert( current, incoming, limit ) );
+                        setAlerts( ( current: Alert[] ) => mergeLatestAlert( current, incoming, limit ) );
+                        return;
+                    }
+
+                    if ( "event" in payload && payload.event === "alert.deleted" ) {
+                        const incoming = mapAlertApiDto( payload.data );
+                        removeAlertFromState( incoming.id );
                         return;
                     }
 
@@ -237,7 +272,7 @@ export function useAlertsFeed ( options: UseAlertsFeedOptions = {} ) {
                         const incoming = mapAlertApiDto( payload.data );
                         knownAlertIdsRef.current.add( incoming.id );
                         markAlertAsNew( incoming.id );
-                        setAlerts( ( current ) => mergeLatestAlert( current, incoming, limit ) );
+                        setAlerts( ( current: Alert[] ) => mergeLatestAlert( current, incoming, limit ) );
                     }
                 } catch {
                     setErrorMessage( "Received malformed WebSocket payload" );
@@ -310,6 +345,7 @@ export function useAlertsFeed ( options: UseAlertsFeedOptions = {} ) {
             newAlertIds,
             isLoading,
             errorMessage,
+            deleteAlert,
         } ),
         [ alerts, newAlertIds, isLoading, errorMessage ],
     );

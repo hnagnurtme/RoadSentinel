@@ -2,10 +2,12 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from application.alert.commands.create_alert_handler import CreateAlertHandler
+from application.alert.commands.delete_alert_handler import DeleteAlertHandler
 from application.alert.queries.get_alert_handler import GetAlertHandler
 from application.alert.queries.list_alerts_handler import ListAlertsHandler
 from application.user.commands.create_user_handler import CreateUserHandler
 from application.user.queries.get_user_handler import GetUserHandler
+from application.user.queries.list_users_handler import ListUsersHandler
 from application.vehicle.commands.create_vehicle_handler import CreateVehicleHandler
 from application.vehicle.queries.get_vehicle_handler import GetVehicleHandler
 from application.vehicle.queries.list_vehicles_handler import ListVehiclesHandler
@@ -39,10 +41,22 @@ def get_get_user_handler(
     return GetUserHandler(user_repository)
 
 
+def get_list_users_handler(
+    user_repository: UserRepositoryImpl = Depends(get_user_repository),
+) -> ListUsersHandler:
+    return ListUsersHandler(user_repository)
+
+
 def get_create_alert_handler(
     alert_repository: AlertRepositoryImpl = Depends(get_alert_repository),
 ) -> CreateAlertHandler:
     return CreateAlertHandler(alert_repository)
+
+
+def get_delete_alert_handler(
+    alert_repository: AlertRepositoryImpl = Depends(get_alert_repository),
+) -> DeleteAlertHandler:
+    return DeleteAlertHandler(alert_repository)
 
 
 def get_get_alert_handler(

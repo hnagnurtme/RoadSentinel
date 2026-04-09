@@ -303,7 +303,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-container-high">
-                <tr className="hover:bg-surface-container-low transition-colors cursor-pointer" onClick={() => onNavigate("incident")}>
+                <tr className="hover:bg-surface-container-low transition-colors cursor-pointer" onClick={() => onNavigate("alerts")}>
                   <td className="px-6 py-4 text-xs font-medium text-on-surface-variant">Oct 24, 14:22:10</td>
                   <td className="px-6 py-4 text-xs font-bold text-primary">TX-4029-A</td>
                   <td className="px-6 py-4">
@@ -314,7 +314,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   <td className="px-6 py-4">
                     <div className="flex justify-center gap-2">
                       <button className="bg-primary text-on-primary text-[9px] font-bold uppercase px-3 py-1.5 rounded hover:opacity-90 shadow-sm transition-opacity">Review</button>
-                      <button className="ring-1 ring-outline-variant/15 text-primary text-[9px] font-bold uppercase px-3 py-1.5 rounded hover:bg-surface-container-low transition-colors bg-surface-container-lowest">Log</button>
+                      <button className="ring-1 ring-outline-variant/15 text-primary text-[9px] font-bold uppercase px-3 py-1.5 rounded hover:bg-surface-container-low transition-colors bg-surface-container-lowest">Delete</button>
                     </div>
                   </td>
                 </tr>
@@ -329,7 +329,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   <td className="px-6 py-4">
                     <div className="flex justify-center gap-2">
                       <button className="bg-primary text-on-primary text-[9px] font-bold uppercase px-3 py-1.5 rounded hover:opacity-90 shadow-sm transition-opacity">Review</button>
-                      <button className="ring-1 ring-outline-variant/15 text-primary text-[9px] font-bold uppercase px-3 py-1.5 rounded hover:bg-surface-container-low transition-colors bg-surface-container-lowest">Log</button>
+                      <button className="ring-1 ring-outline-variant/15 text-primary text-[9px] font-bold uppercase px-3 py-1.5 rounded hover:bg-surface-container-low transition-colors bg-surface-container-lowest">Delete</button>
                     </div>
                   </td>
                 </tr>
@@ -344,7 +344,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                   <td className="px-6 py-4">
                     <div className="flex justify-center gap-2">
                       <button className="bg-primary text-on-primary text-[9px] font-bold uppercase px-3 py-1.5 rounded hover:opacity-90 shadow-sm transition-opacity">Review</button>
-                      <button className="ring-1 ring-outline-variant/15 text-primary text-[9px] font-bold uppercase px-3 py-1.5 rounded hover:bg-surface-container-low transition-colors bg-surface-container-lowest">Log</button>
+                      <button className="ring-1 ring-outline-variant/15 text-primary text-[9px] font-bold uppercase px-3 py-1.5 rounded hover:bg-surface-container-low transition-colors bg-surface-container-lowest">Delete</button>
                     </div>
                   </td>
                 </tr>

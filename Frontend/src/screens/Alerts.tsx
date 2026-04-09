@@ -5,12 +5,11 @@ import { useAlertsFeed } from "@/features/alerts/hooks/useAlertsFeed";
 import { Alert } from "@/types/alert";
 
 interface AlertsProps {
-  onNavigate: (view: "dashboard" | "incident" | "alerts") => void;
   onReviewAlert: (alert: Alert) => void;
 }
 
-export function Alerts({ onNavigate, onReviewAlert }: AlertsProps) {
-  const { alerts, newAlertIds, isLoading, errorMessage } = useAlertsFeed({ limit: 30 });
+export function Alerts({ onReviewAlert }: AlertsProps) {
+  const { alerts, newAlertIds, isLoading, errorMessage, deleteAlert } = useAlertsFeed({ limit: 30 });
 
   return (
     <div className="p-8 space-y-8 max-w-[1600px] w-full mx-auto">
@@ -28,6 +27,7 @@ export function Alerts({ onNavigate, onReviewAlert }: AlertsProps) {
         isLoading={isLoading}
         errorMessage={errorMessage}
         onReview={onReviewAlert}
+        onDelete={deleteAlert}
       />
     </div>
   );
