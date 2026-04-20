@@ -1,17 +1,31 @@
-from fastapi import APIRouter, Depends, Query
+"""
+interfaces/api/v1/alert.py
+---------------------------
+REST endpoints for the ``Alert`` resource.
+
+Endpoints:
+  POST   /alerts          — create a new alert
+  GET    /alerts          — list alerts (paginated)
+  GET    /alerts/{id}     — get a single alert
+  DELETE /alerts/{id}     — soft-delete an alert
+"""
+from __future__ import annotations
+
 import uuid
 
-from application.alert.alert_dto import AlertResponse, CreateAlertRequest
-from application.alert.commands.delete_alert import DeleteAlertCommand
-from application.alert.commands.delete_alert_handler import DeleteAlertHandler
-from application.user.user_dto import UserResponse
-from application.vehicle.vehicle_dto import VehicleResponse
+from fastapi import APIRouter, Depends, Query
+
 from application.alert.commands.create_alert import CreateAlertCommand
 from application.alert.commands.create_alert_handler import CreateAlertHandler
+from application.alert.commands.delete_alert import DeleteAlertCommand
+from application.alert.commands.delete_alert_handler import DeleteAlertHandler
 from application.alert.queries.get_alert import GetAlertQuery
 from application.alert.queries.get_alert_handler import GetAlertHandler
 from application.alert.queries.list_alerts import ListAlertsQuery
 from application.alert.queries.list_alerts_handler import ListAlertsHandler
+from application.alert.alert_dto import CreateAlertRequest
+from infrastructure.repositories.user_repository_impl import UserRepositoryImpl
+from infrastructure.repositories.vehicle_repository_impl import VehicleRepositoryImpl
 from interfaces.api.deps import (
     get_create_alert_handler,
     get_delete_alert_handler,
@@ -21,94 +35,44 @@ from interfaces.api.deps import (
     get_vehicle_repository,
 )
 from interfaces.api.response import success_response
+from interfaces.api.v1.mappers import to_alert_response, to_user_response, to_vehicle_response
 from interfaces.api.v1.websocket import alerts_ws_manager
-from infrastructure.repositories.user_repository_impl import UserRepositoryImpl
-from infrastructure.repositories.vehicle_repository_impl import VehicleRepositoryImpl
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
 
-def _to_user_response(user) -> UserResponse:
-    return UserResponse(
-        id=user._id,
-        email=user.email.value,
-        name=user.name,
-        avatar_image_url=user.avatar_image_url,
-        name__family=user.name__family,
-        name__given=user.name__given,
-        name__middle=user.name__middle,
-        name__prefix=user.name__prefix,
-        name__suffix=user.name__suffix,
-        birthday=user.birthday,
-        gender=user.gender,
-        address__city=user.address__city,
-        address__country=user.address__country,
-        address__line1=user.address__line1,
-        address__line2=user.address__line2,
-        created_at=user.created_at,
-        updated_at=user.updated_at,
-        deleted_at=user.deleted_at,
-    )
-
-
-def _to_vehicle_response(vehicle) -> VehicleResponse:
-    return VehicleResponse(
-        id=vehicle._id,
-        plate_number=vehicle.plate_number,
-        manufacturer=vehicle.manufacturer,
-        model=vehicle.model,
-        vehicle_image_url=vehicle.vehicle_image_url,
-        color=vehicle.color,
-        production_year=vehicle.production_year,
-        vin=vehicle.vin,
-        created_at=vehicle._created_at,
-        updated_at=vehicle._updated_at,
-        deleted_at=vehicle._deleted_at,
-    )
+# ── Relation resolver ─────────────────────────────────────────────────────────
 
 
 def _resolve_alert_relations(
     alert,
     user_repository: UserRepositoryImpl,
     vehicle_repository: VehicleRepositoryImpl,
-) -> tuple[UserResponse | None, VehicleResponse | None]:
-    user_response: UserResponse | None = None
-    vehicle_response: VehicleResponse | None = None
+):
+    """Fetch and map the optional driver and vehicle relations for an alert.
+
+    .. todo::
+        The current implementation issues up to 2 extra DB queries per alert
+        which causes N+1 queries in ``list_alerts``.  This should be replaced
+        with a JOIN query or a batch-fetch in the repository layer.
+    """
+    user = None
+    vehicle = None
 
     if alert.driver_id is not None:
-        user = user_repository.get_by_id(alert.driver_id)
-        if user is not None:
-            user_response = _to_user_response(user)
+        user_entity = user_repository.get_by_id(alert.driver_id)
+        if user_entity is not None:
+            user = to_user_response(user_entity)
 
     if alert.vehicle_id is not None:
-        vehicle = vehicle_repository.get_by_id(alert.vehicle_id)
-        if vehicle is not None:
-            vehicle_response = _to_vehicle_response(vehicle)
+        vehicle_entity = vehicle_repository.get_by_id(alert.vehicle_id)
+        if vehicle_entity is not None:
+            vehicle = to_vehicle_response(vehicle_entity)
 
-    return user_response, vehicle_response
+    return user, vehicle
 
 
-def _to_alert_response(
-    alert,
-    user: UserResponse | None = None,
-    vehicle: VehicleResponse | None = None,
-) -> AlertResponse:
-    return AlertResponse(
-        id=alert._id,
-        message=alert.message,
-        alert_type=alert.alert_type,
-        device_id=alert.device_id,
-        driver_id=alert.driver_id,
-        vehicle_id=alert.vehicle_id,
-        evidence_url=alert.evidence_url,
-        latitude=alert.latitude,
-        longitude=alert.longitude,
-        user=user,
-        vehicle=vehicle,
-        created_at=alert._created_at,
-        updated_at=alert._updated_at,
-        deleted_at=alert._deleted_at,
-    )
+# ── Endpoints ─────────────────────────────────────────────────────────────────
 
 
 @router.post("")
@@ -130,20 +94,9 @@ async def create_alert(
             longitude=payload.longitude,
         )
     )
-    user, vehicle = _resolve_alert_relations(
-        alert=alert,
-        user_repository=user_repository,
-        vehicle_repository=vehicle_repository,
-    )
-    data = _to_alert_response(alert, user=user, vehicle=vehicle).model_dump(
-        by_alias=True
-    )
-    await alerts_ws_manager.broadcast(
-        {
-            "event": "alert.created",
-            "data": data,
-        }
-    )
+    user, vehicle = _resolve_alert_relations(alert, user_repository, vehicle_repository)
+    data = to_alert_response(alert, user=user, vehicle=vehicle).model_dump(by_alias=True)
+    await alerts_ws_manager.broadcast({"event": "alert.created", "data": data})
     return success_response(data=data)
 
 
@@ -155,15 +108,9 @@ def get_alert(
     vehicle_repository: VehicleRepositoryImpl = Depends(get_vehicle_repository),
 ):
     alert = handler.handle(GetAlertQuery(alert_id=alert_id))
-    user, vehicle = _resolve_alert_relations(
-        alert=alert,
-        user_repository=user_repository,
-        vehicle_repository=vehicle_repository,
-    )
+    user, vehicle = _resolve_alert_relations(alert, user_repository, vehicle_repository)
     return success_response(
-        data=_to_alert_response(alert, user=user, vehicle=vehicle).model_dump(
-            by_alias=True
-        )
+        data=to_alert_response(alert, user=user, vehicle=vehicle).model_dump(by_alias=True)
     )
 
 
@@ -175,18 +122,9 @@ async def delete_alert(
     vehicle_repository: VehicleRepositoryImpl = Depends(get_vehicle_repository),
 ):
     alert = handler.handle(DeleteAlertCommand(alert_id=alert_id))
-    user, vehicle = _resolve_alert_relations(
-        alert=alert,
-        user_repository=user_repository,
-        vehicle_repository=vehicle_repository,
-    )
-    data = _to_alert_response(alert, user=user, vehicle=vehicle).model_dump(by_alias=True)
-    await alerts_ws_manager.broadcast(
-        {
-            "event": "alert.deleted",
-            "data": data,
-        }
-    )
+    user, vehicle = _resolve_alert_relations(alert, user_repository, vehicle_repository)
+    data = to_alert_response(alert, user=user, vehicle=vehicle).model_dump(by_alias=True)
+    await alerts_ws_manager.broadcast({"event": "alert.deleted", "data": data})
     return success_response(data=data)
 
 
@@ -199,17 +137,11 @@ def list_alerts(
     vehicle_repository: VehicleRepositoryImpl = Depends(get_vehicle_repository),
 ):
     alerts = handler.handle(ListAlertsQuery(limit=limit, driver_id=driver_id))
-    data = []
-    for alert in alerts:
-        user, vehicle = _resolve_alert_relations(
-            alert=alert,
-            user_repository=user_repository,
-            vehicle_repository=vehicle_repository,
-        )
-        data.append(
-            _to_alert_response(alert, user=user, vehicle=vehicle).model_dump(
-                by_alias=True
-            )
-        )
-
+    data = [
+        to_alert_response(
+            alert,
+            *_resolve_alert_relations(alert, user_repository, vehicle_repository),
+        ).model_dump(by_alias=True)
+        for alert in alerts
+    ]
     return success_response(data=data)

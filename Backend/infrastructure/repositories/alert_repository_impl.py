@@ -1,7 +1,8 @@
+from datetime import datetime, timezone
+import uuid
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from datetime import datetime
-import uuid
 
 from domain.alert.entities import AlertEntity
 from domain.alert.repository import AlertRepository
@@ -75,7 +76,7 @@ class AlertRepositoryImpl(AlertRepository):
         if not row:
             return None
 
-        row._deleted_at = datetime.utcnow()
+        row._deleted_at = datetime.now(timezone.utc)
         self.db.add(row)
         self.db.commit()
         self.db.refresh(row)

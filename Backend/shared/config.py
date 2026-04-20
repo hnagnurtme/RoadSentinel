@@ -25,7 +25,7 @@ def _apply_gateway_cloudinary_defaults() -> None:
         return
 
     root_dir = Path(__file__).resolve().parents[2]
-    env_yml = root_dir / "Gateway" / "env.yml"
+    env_yml = root_dir / "env.yml"
     if not env_yml.exists():
         return
 
@@ -106,14 +106,17 @@ class Settings(BaseSettings):
 
     DRIVER_EVENT_UNKNOWN_ENTER_FRAMES: int = 12
 
-    DRIVER_EVENT_SLEEP_ENTER_FRAMES: int = 3
+    # Sleeping detected in 2 frames — fast response is critical.
+    DRIVER_EVENT_SLEEP_ENTER_FRAMES: int = 2
     DRIVER_EVENT_SLEEP_EXIT_FRAMES: int = 1
     DRIVER_EVENT_PHONE_ENTER_FRAMES: int = 3
-    DRIVER_EVENT_PHONE_EXIT_FRAMES: int = 1
-    DRIVER_EVENT_DISTRACTED_ENTER_FRAMES: int = 4
+    DRIVER_EVENT_PHONE_EXIT_FRAMES: int = 2
+    # Distracted needs 6 sustained frames — brief glances away are normal.
+    DRIVER_EVENT_DISTRACTED_ENTER_FRAMES: int = 6
     DRIVER_EVENT_DISTRACTED_EXIT_FRAMES: int = 2
-    DRIVER_EVENT_DROWSY_ENTER_FRAMES: int = 3
-    DRIVER_EVENT_DROWSY_EXIT_FRAMES: int = 1
+    # Drowsy (yawning) needs 4 frames — yawning alone is not sleeping.
+    DRIVER_EVENT_DROWSY_ENTER_FRAMES: int = 4
+    DRIVER_EVENT_DROWSY_EXIT_FRAMES: int = 2
 
     DRIVER_EVENT_PHONE_DECAY_MISS_FRAMES: int = 2
     DRIVER_EVENT_DROWSY_DECAY_MISS_FRAMES: int = 2
@@ -126,15 +129,19 @@ class Settings(BaseSettings):
     DRIVER_EVENT_PRESENCE_LABELS: list[str] = ["face", "eye", "person", "driver"]
     DRIVER_EVENT_PRIORITY: list[str] = ["using_phone", "sleeping", "distracted"]
 
-    DRIVER_EVENT_SLEEPING_RELEASE_GRACE_SECONDS: float = 1.0
-    DRIVER_EVENT_PHONE_RELEASE_GRACE_SECONDS: float = 0.8
+    DRIVER_EVENT_SLEEPING_RELEASE_GRACE_SECONDS: float = 1.5
+    DRIVER_EVENT_PHONE_RELEASE_GRACE_SECONDS: float = 1.0
     DRIVER_EVENT_DROWSY_RELEASE_GRACE_SECONDS: float = 0.8
-    DRIVER_EVENT_ALERT_COOLDOWN_SECONDS: float = 2.0
-    DRIVER_EVENT_PHONE_MIN_ALERT_SECONDS: float = 1.2
-    DRIVER_EVENT_DROWSY_MIN_ALERT_SECONDS: float = 1.5
+    # Cooldown between repeated alerts for the same event type.
+    DRIVER_EVENT_ALERT_COOLDOWN_SECONDS: float = 3.0
+    DRIVER_EVENT_PHONE_MIN_ALERT_SECONDS: float = 1.5
+    DRIVER_EVENT_DROWSY_MIN_ALERT_SECONDS: float = 2.0
+    # Sustained drowsy for this many seconds → escalate to sleeping-level urgency.
+    DRIVER_EVENT_DROWSY_ESCALATION_SECONDS: float = 10.0
 
     DRIVER_EVENT_EVIDENCE_ENABLED: bool = True
-    DRIVER_EVENT_EVIDENCE_SECONDS: int = 8
+    # 10 seconds of evidence gives enough context to judge an event.
+    DRIVER_EVENT_EVIDENCE_SECONDS: int = 10
     DRIVER_EVENT_EVIDENCE_FPS: int = 5
     DRIVER_EVENT_EVIDENCE_CODEC: str = "mp4v"
 
@@ -212,6 +219,7 @@ class Settings(BaseSettings):
         "DRIVER_EVENT_ALERT_COOLDOWN_SECONDS",
         "DRIVER_EVENT_PHONE_MIN_ALERT_SECONDS",
         "DRIVER_EVENT_DROWSY_MIN_ALERT_SECONDS",
+        "DRIVER_EVENT_DROWSY_ESCALATION_SECONDS",
     )
     @classmethod
     def _validate_non_negative_seconds(cls, value: float) -> float:
