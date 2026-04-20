@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 from sqlalchemy import DateTime, MetaData
@@ -24,11 +24,15 @@ class DataModel(Base):
         server_default=text("gen_random_uuid()"),
     )
 
-    _created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    _updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    _created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
-    _deleted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    _updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+    _deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class PGView:

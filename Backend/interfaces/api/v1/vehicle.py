@@ -1,5 +1,18 @@
-from fastapi import APIRouter, Depends, Query
+"""
+interfaces/api/v1/vehicle.py
+-----------------------------
+REST endpoints for the ``Vehicle`` resource.
+
+Endpoints:
+  POST  /vehicles          — create a vehicle
+  GET   /vehicles          — list vehicles (paginated)
+  GET   /vehicles/{id}     — get a single vehicle
+"""
+from __future__ import annotations
+
 import uuid
+
+from fastapi import APIRouter, Depends, Query
 
 from application.vehicle.commands.create_vehicle import CreateVehicleCommand
 from application.vehicle.commands.create_vehicle_handler import CreateVehicleHandler
@@ -7,31 +20,16 @@ from application.vehicle.queries.get_vehicle import GetVehicleQuery
 from application.vehicle.queries.get_vehicle_handler import GetVehicleHandler
 from application.vehicle.queries.list_vehicles import ListVehiclesQuery
 from application.vehicle.queries.list_vehicles_handler import ListVehiclesHandler
-from application.vehicle.vehicle_dto import CreateVehicleRequest, VehicleResponse
+from application.vehicle.vehicle_dto import CreateVehicleRequest
 from interfaces.api.deps import (
     get_create_vehicle_handler,
     get_get_vehicle_handler,
     get_list_vehicles_handler,
 )
 from interfaces.api.response import success_response
+from interfaces.api.v1.mappers import to_vehicle_response
 
 router = APIRouter(prefix="/vehicles", tags=["vehicles"])
-
-
-def _to_vehicle_response(vehicle) -> VehicleResponse:
-    return VehicleResponse(
-        id=vehicle._id,
-        plate_number=vehicle.plate_number,
-        manufacturer=vehicle.manufacturer,
-        model=vehicle.model,
-        vehicle_image_url=vehicle.vehicle_image_url,
-        color=vehicle.color,
-        production_year=vehicle.production_year,
-        vin=vehicle.vin,
-        created_at=vehicle._created_at,
-        updated_at=vehicle._updated_at,
-        deleted_at=vehicle._deleted_at,
-    )
 
 
 @router.post("")
@@ -50,9 +48,7 @@ def create_vehicle(
             vin=payload.vin,
         )
     )
-    return success_response(
-        data=_to_vehicle_response(vehicle).model_dump(by_alias=True)
-    )
+    return success_response(data=to_vehicle_response(vehicle).model_dump(by_alias=True))
 
 
 @router.get("/{vehicle_id}")
@@ -61,9 +57,7 @@ def get_vehicle(
     handler: GetVehicleHandler = Depends(get_get_vehicle_handler),
 ):
     vehicle = handler.handle(GetVehicleQuery(vehicle_id=vehicle_id))
-    return success_response(
-        data=_to_vehicle_response(vehicle).model_dump(by_alias=True)
-    )
+    return success_response(data=to_vehicle_response(vehicle).model_dump(by_alias=True))
 
 
 @router.get("")
@@ -73,8 +67,5 @@ def list_vehicles(
 ):
     vehicles = handler.handle(ListVehiclesQuery(limit=limit))
     return success_response(
-        data=[
-            _to_vehicle_response(vehicle).model_dump(by_alias=True)
-            for vehicle in vehicles
-        ]
+        data=[to_vehicle_response(v).model_dump(by_alias=True) for v in vehicles]
     )
