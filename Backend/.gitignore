@@ -37,3 +37,4 @@ coverage.xml
 # Alembic artifacts
 alembic/versions/__pycache__/
 
+env.yml
