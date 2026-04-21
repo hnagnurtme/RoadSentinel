@@ -1,8 +1,9 @@
-from functools import lru_cache
-from typing import Any
+import json
 import os
-from pathlib import Path
 import uuid
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
 
 from dotenv import load_dotenv
 from pydantic import field_validator, model_validator
@@ -16,70 +17,70 @@ except ImportError:  # pragma: no cover - optional runtime dependency
 load_dotenv()
 
 
-def _apply_gateway_cloudinary_defaults() -> None:
-    """
-    Keep backend cloudinary config in sync with Gateway env.yml when backend
-    variables are not explicitly provided.
-    """
+_SECRET_KEYS = {
+    "DATABASE_URL",
+    "REDIS_URL",
+    "POSTGRES_URL",
+    "DRIVER_EVENT_CLOUDINARY_API_KEY",
+    "DRIVER_EVENT_CLOUDINARY_API_SECRET",
+}
+
+
+def _to_env_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, list):
+        return json.dumps(value)
+    return str(value).strip()
+
+
+def _flatten_yaml(prefix: str, value: Any, out: dict[str, Any]) -> None:
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            key_text = str(key).strip().upper()
+            if not key_text:
+                continue
+            next_prefix = f"{prefix}_{key_text}" if prefix else key_text
+            _flatten_yaml(next_prefix, nested, out)
+        return
+    out[prefix] = value
+
+
+def _apply_config_yaml_defaults() -> None:
+    """Load non-secret application settings from config.yaml."""
     if yaml is None:
         return
 
-    root_dir = Path(__file__).resolve().parents[2]
-    env_yml = root_dir / "env.yml"
-    if not env_yml.exists():
+    backend_root = Path(__file__).resolve().parents[1]
+    config_path = backend_root / "config.yaml"
+    if not config_path.exists():
         return
 
     try:
-        raw = yaml.safe_load(env_yml.read_text(encoding="utf-8")) or {}
+        raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     except Exception:
         return
 
     if not isinstance(raw, dict):
         return
 
-    cloud = raw.get("cloudinary")
-    if not isinstance(cloud, dict):
-        return
+    flattened: dict[str, Any] = {}
+    _flatten_yaml("", raw, flattened)
 
-    mappings = {
-        "DRIVER_EVENT_CLOUDINARY_CLOUD_NAME": cloud.get("cloud_name"),
-        "DRIVER_EVENT_CLOUDINARY_API_KEY": cloud.get("api_key"),
-        "DRIVER_EVENT_CLOUDINARY_API_SECRET": cloud.get("api_secret"),
-        "DRIVER_EVENT_CLOUDINARY_FOLDER": cloud.get("folder"),
-    }
-
-    found_any_credential = False
-    for env_key, value in mappings.items():
+    for env_key, value in flattened.items():
+        if not env_key or env_key in _SECRET_KEYS:
+            continue
         if os.getenv(env_key):
             continue
         if value is None:
             continue
-        normalized = str(value).strip()
+        normalized = _to_env_value(value)
         if not normalized:
             continue
         os.environ[env_key] = normalized
-        if env_key in {
-            "DRIVER_EVENT_CLOUDINARY_CLOUD_NAME",
-            "DRIVER_EVENT_CLOUDINARY_API_KEY",
-            "DRIVER_EVENT_CLOUDINARY_API_SECRET",
-        }:
-            found_any_credential = True
-
-    if (
-        found_any_credential
-        and os.getenv("DRIVER_EVENT_CLOUDINARY_ENABLED") is None
-        and cloud.get("enabled") is None
-    ):
-        os.environ["DRIVER_EVENT_CLOUDINARY_ENABLED"] = "true"
-
-    if os.getenv("DRIVER_EVENT_CLOUDINARY_ENABLED") is None and cloud.get("enabled") is not None:
-        enabled = str(cloud.get("enabled")).strip().lower()
-        os.environ["DRIVER_EVENT_CLOUDINARY_ENABLED"] = (
-            "true" if enabled in {"1", "true", "yes", "on"} else "false"
-        )
 
 
-_apply_gateway_cloudinary_defaults()
+_apply_config_yaml_defaults()
 
 
 class Settings(BaseSettings):
@@ -273,9 +274,18 @@ class Settings(BaseSettings):
         missing = [
             key
             for key, value in (
-                ("DRIVER_EVENT_CLOUDINARY_CLOUD_NAME", self.DRIVER_EVENT_CLOUDINARY_CLOUD_NAME),
-                ("DRIVER_EVENT_CLOUDINARY_API_KEY", self.DRIVER_EVENT_CLOUDINARY_API_KEY),
-                ("DRIVER_EVENT_CLOUDINARY_API_SECRET", self.DRIVER_EVENT_CLOUDINARY_API_SECRET),
+                (
+                    "DRIVER_EVENT_CLOUDINARY_CLOUD_NAME",
+                    self.DRIVER_EVENT_CLOUDINARY_CLOUD_NAME,
+                ),
+                (
+                    "DRIVER_EVENT_CLOUDINARY_API_KEY",
+                    self.DRIVER_EVENT_CLOUDINARY_API_KEY,
+                ),
+                (
+                    "DRIVER_EVENT_CLOUDINARY_API_SECRET",
+                    self.DRIVER_EVENT_CLOUDINARY_API_SECRET,
+                ),
             )
             if not value
         ]
