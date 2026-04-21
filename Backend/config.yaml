@@ -1,0 +1,70 @@
+app:
+  name: RoadSentinel Backend
+  env: development
+  host: 127.0.0.1
+  port: 8000
+  public_base_url: http://127.0.0.1:8000
+
+sql_echo: false
+
+cors_allow_origins:
+  - http://localhost:3000
+  - http://127.0.0.1:3000
+cors_allow_credentials: true
+cors_allow_methods:
+  - "*"
+cors_allow_headers:
+  - "*"
+
+driver_event:
+  unknown_enter_frames: 12
+
+  sleep_enter_frames: 2
+  sleep_exit_frames: 1
+  phone_enter_frames: 3
+  phone_exit_frames: 2
+  distracted_enter_frames: 6
+  distracted_exit_frames: 2
+  drowsy_enter_frames: 4
+  drowsy_exit_frames: 2
+
+  phone_decay_miss_frames: 2
+  drowsy_decay_miss_frames: 2
+
+  min_sleep_confidence: 0.5
+  min_phone_confidence: 0.6
+  min_distracted_confidence: 0.6
+  min_drowsy_confidence: 0.55
+
+  presence_labels:
+    - face
+    - eye
+    - person
+    - driver
+
+  priority:
+    - using_phone
+    - sleeping
+    - distracted
+
+  sleeping_release_grace_seconds: 1.5
+  phone_release_grace_seconds: 1.0
+  drowsy_release_grace_seconds: 0.8
+  alert_cooldown_seconds: 3.0
+  phone_min_alert_seconds: 1.5
+  drowsy_min_alert_seconds: 2.0
+  drowsy_escalation_seconds: 10.0
+
+  evidence_enabled: true
+  evidence_seconds: 10
+  evidence_fps: 5
+  evidence_codec: mp4v
+
+  cloudinary:
+    enabled: true
+    cloud_name: dks1edqey
+    folder: roadsentinel/backend
+
+  alert_device_id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+  alert_driver_id: 1edc79dd-1331-454e-b64d-12fb8e77f464
+  alert_vehicle_id: 0e225dd7-deba-4cfa-91ef-dfa30a3942d1
