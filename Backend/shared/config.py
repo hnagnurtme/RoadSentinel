@@ -122,6 +122,37 @@ class Settings(BaseSettings):
     DRIVER_EVENT_PHONE_DECAY_MISS_FRAMES: int = 2
     DRIVER_EVENT_DROWSY_DECAY_MISS_FRAMES: int = 2
 
+    # Hierarchical sliding windows (in classifier ticks, not wall-clock frames).
+    DRIVER_EVENT_L1_WINDOW_FRAMES: int = 3
+    DRIVER_EVENT_L2_WINDOW_FRAMES: int = 9
+    DRIVER_EVENT_L3_WINDOW_FRAMES: int = 24
+    DRIVER_EVENT_WINDOW_DECAY: float = 0.82
+    DRIVER_EVENT_SCORE_WEIGHT_L1: float = 0.45
+    DRIVER_EVENT_SCORE_WEIGHT_L2: float = 0.40
+    DRIVER_EVENT_SCORE_WEIGHT_L3: float = 0.15
+    DRIVER_EVENT_CANDIDATE_ENTER_FRAMES: int = 1
+
+    # Score-based activation/deactivation thresholds per event.
+    DRIVER_EVENT_SLEEPING_ACTIVATE_SCORE: float = 0.55
+    DRIVER_EVENT_SLEEPING_DEACTIVATE_SCORE: float = 0.35
+    DRIVER_EVENT_PHONE_ACTIVATE_SCORE: float = 0.52
+    DRIVER_EVENT_PHONE_DEACTIVATE_SCORE: float = 0.32
+    DRIVER_EVENT_DISTRACTED_ACTIVATE_SCORE: float = 0.48
+    DRIVER_EVENT_DISTRACTED_DEACTIVATE_SCORE: float = 0.30
+    DRIVER_EVENT_DROWSY_ACTIVATE_SCORE: float = 0.52
+    DRIVER_EVENT_DROWSY_DEACTIVATE_SCORE: float = 0.32
+
+    # One-frame promotion when confidence is very high (eye-closed-like feel).
+    DRIVER_EVENT_PHONE_FASTPATH_CONFIDENCE: float = 0.80
+    DRIVER_EVENT_DISTRACTED_FASTPATH_CONFIDENCE: float = 0.78
+    DRIVER_EVENT_DROWSY_FASTPATH_CONFIDENCE: float = 0.82
+
+    # Hold frames keep an event alive briefly when score dips near threshold.
+    DRIVER_EVENT_SLEEP_HOLD_FRAMES: int = 5
+    DRIVER_EVENT_PHONE_HOLD_FRAMES: int = 3
+    DRIVER_EVENT_DISTRACTED_HOLD_FRAMES: int = 4
+    DRIVER_EVENT_DROWSY_HOLD_FRAMES: int = 3
+
     DRIVER_EVENT_MIN_SLEEP_CONFIDENCE: float = 0.5
     DRIVER_EVENT_MIN_PHONE_CONFIDENCE: float = 0.6
     DRIVER_EVENT_MIN_DISTRACTED_CONFIDENCE: float = 0.6
@@ -132,6 +163,7 @@ class Settings(BaseSettings):
 
     DRIVER_EVENT_SLEEPING_RELEASE_GRACE_SECONDS: float = 1.5
     DRIVER_EVENT_PHONE_RELEASE_GRACE_SECONDS: float = 1.0
+    DRIVER_EVENT_DISTRACTED_RELEASE_GRACE_SECONDS: float = 1.2
     DRIVER_EVENT_DROWSY_RELEASE_GRACE_SECONDS: float = 0.8
     # Cooldown between repeated alerts for the same event type.
     DRIVER_EVENT_ALERT_COOLDOWN_SECONDS: float = 3.0
@@ -145,6 +177,8 @@ class Settings(BaseSettings):
     DRIVER_EVENT_EVIDENCE_SECONDS: int = 10
     DRIVER_EVENT_EVIDENCE_FPS: int = 5
     DRIVER_EVENT_EVIDENCE_CODEC: str = "mp4v"
+    DRIVER_EVENT_EVIDENCE_CODEC_CANDIDATES: list[str] = ["avc1", "H264", "mp4v"]
+    DRIVER_EVENT_EVIDENCE_KEEP_LOCAL_AFTER_UPLOAD: bool = False
 
     DRIVER_EVENT_CLOUDINARY_ENABLED: bool = False
     DRIVER_EVENT_CLOUDINARY_CLOUD_NAME: str = ""
@@ -176,6 +210,7 @@ class Settings(BaseSettings):
         "CORS_ALLOW_HEADERS",
         "DRIVER_EVENT_PRESENCE_LABELS",
         "DRIVER_EVENT_PRIORITY",
+        "DRIVER_EVENT_EVIDENCE_CODEC_CANDIDATES",
         mode="before",
     )
     @classmethod
@@ -194,6 +229,14 @@ class Settings(BaseSettings):
         "DRIVER_EVENT_DROWSY_EXIT_FRAMES",
         "DRIVER_EVENT_PHONE_DECAY_MISS_FRAMES",
         "DRIVER_EVENT_DROWSY_DECAY_MISS_FRAMES",
+        "DRIVER_EVENT_L1_WINDOW_FRAMES",
+        "DRIVER_EVENT_L2_WINDOW_FRAMES",
+        "DRIVER_EVENT_L3_WINDOW_FRAMES",
+        "DRIVER_EVENT_CANDIDATE_ENTER_FRAMES",
+        "DRIVER_EVENT_SLEEP_HOLD_FRAMES",
+        "DRIVER_EVENT_PHONE_HOLD_FRAMES",
+        "DRIVER_EVENT_DISTRACTED_HOLD_FRAMES",
+        "DRIVER_EVENT_DROWSY_HOLD_FRAMES",
     )
     @classmethod
     def _validate_positive_frames(cls, value: int) -> int:
@@ -206,6 +249,21 @@ class Settings(BaseSettings):
         "DRIVER_EVENT_MIN_PHONE_CONFIDENCE",
         "DRIVER_EVENT_MIN_DISTRACTED_CONFIDENCE",
         "DRIVER_EVENT_MIN_DROWSY_CONFIDENCE",
+        "DRIVER_EVENT_WINDOW_DECAY",
+        "DRIVER_EVENT_SCORE_WEIGHT_L1",
+        "DRIVER_EVENT_SCORE_WEIGHT_L2",
+        "DRIVER_EVENT_SCORE_WEIGHT_L3",
+        "DRIVER_EVENT_SLEEPING_ACTIVATE_SCORE",
+        "DRIVER_EVENT_SLEEPING_DEACTIVATE_SCORE",
+        "DRIVER_EVENT_PHONE_ACTIVATE_SCORE",
+        "DRIVER_EVENT_PHONE_DEACTIVATE_SCORE",
+        "DRIVER_EVENT_DISTRACTED_ACTIVATE_SCORE",
+        "DRIVER_EVENT_DISTRACTED_DEACTIVATE_SCORE",
+        "DRIVER_EVENT_DROWSY_ACTIVATE_SCORE",
+        "DRIVER_EVENT_DROWSY_DEACTIVATE_SCORE",
+        "DRIVER_EVENT_PHONE_FASTPATH_CONFIDENCE",
+        "DRIVER_EVENT_DISTRACTED_FASTPATH_CONFIDENCE",
+        "DRIVER_EVENT_DROWSY_FASTPATH_CONFIDENCE",
     )
     @classmethod
     def _validate_confidence(cls, value: float) -> float:
@@ -216,6 +274,7 @@ class Settings(BaseSettings):
     @field_validator(
         "DRIVER_EVENT_SLEEPING_RELEASE_GRACE_SECONDS",
         "DRIVER_EVENT_PHONE_RELEASE_GRACE_SECONDS",
+        "DRIVER_EVENT_DISTRACTED_RELEASE_GRACE_SECONDS",
         "DRIVER_EVENT_DROWSY_RELEASE_GRACE_SECONDS",
         "DRIVER_EVENT_ALERT_COOLDOWN_SECONDS",
         "DRIVER_EVENT_PHONE_MIN_ALERT_SECONDS",
@@ -241,6 +300,19 @@ class Settings(BaseSettings):
         if len(value) != 4:
             raise ValueError("DRIVER_EVENT_EVIDENCE_CODEC must be exactly 4 chars")
         return value
+
+    @field_validator("DRIVER_EVENT_EVIDENCE_CODEC_CANDIDATES", mode="after")
+    @classmethod
+    def _validate_evidence_codec_candidates(cls, value: list[str]) -> list[str]:
+        codecs = [item.strip() for item in value if item and item.strip()]
+        if not codecs:
+            raise ValueError("DRIVER_EVENT_EVIDENCE_CODEC_CANDIDATES must not be empty")
+        for codec in codecs:
+            if len(codec) != 4:
+                raise ValueError(
+                    "Each DRIVER_EVENT_EVIDENCE_CODEC_CANDIDATES value must be exactly 4 chars"
+                )
+        return codecs
 
     @field_validator(
         "DRIVER_EVENT_CLOUDINARY_CLOUD_NAME",
@@ -315,6 +387,55 @@ class Settings(BaseSettings):
                 "DRIVER_EVENT_PRIORITY only supports: sleeping, using_phone, distracted"
             )
         return priority
+
+    @model_validator(mode="after")
+    def _validate_hierarchical_windows(self):
+        if not (
+            self.DRIVER_EVENT_L1_WINDOW_FRAMES
+            <= self.DRIVER_EVENT_L2_WINDOW_FRAMES
+            <= self.DRIVER_EVENT_L3_WINDOW_FRAMES
+        ):
+            raise ValueError(
+                "Driver event windows must satisfy L1 <= L2 <= L3"
+            )
+
+        weight_sum = (
+            self.DRIVER_EVENT_SCORE_WEIGHT_L1
+            + self.DRIVER_EVENT_SCORE_WEIGHT_L2
+            + self.DRIVER_EVENT_SCORE_WEIGHT_L3
+        )
+        if weight_sum <= 0.0:
+            raise ValueError("Driver event score weights must sum to > 0")
+
+        pairs = (
+            (
+                "sleeping",
+                self.DRIVER_EVENT_SLEEPING_ACTIVATE_SCORE,
+                self.DRIVER_EVENT_SLEEPING_DEACTIVATE_SCORE,
+            ),
+            (
+                "using_phone",
+                self.DRIVER_EVENT_PHONE_ACTIVATE_SCORE,
+                self.DRIVER_EVENT_PHONE_DEACTIVATE_SCORE,
+            ),
+            (
+                "distracted",
+                self.DRIVER_EVENT_DISTRACTED_ACTIVATE_SCORE,
+                self.DRIVER_EVENT_DISTRACTED_DEACTIVATE_SCORE,
+            ),
+            (
+                "drowsy",
+                self.DRIVER_EVENT_DROWSY_ACTIVATE_SCORE,
+                self.DRIVER_EVENT_DROWSY_DEACTIVATE_SCORE,
+            ),
+        )
+        for event, activate, deactivate in pairs:
+            if deactivate >= activate:
+                raise ValueError(
+                    f"{event} deactivate score must be lower than activate score"
+                )
+
+        return self
 
 
 @lru_cache

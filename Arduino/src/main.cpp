@@ -4,18 +4,18 @@
 #include <WebSocketsClient.h>   // arduinoWebSockets by Links2004
 
 // ─── Wi-Fi credentials ────────────────────────────────────────────────────────
-static const char* WIFI_SSID = "37 Ngo Van So";
-static const char* WIFI_PASS = "987654321";
+static const char* WIFI_SSID = "ITF Da Nang";
+static const char* WIFI_PASS = "itfdanang";
 
 // ─── FastAPI VPS ──────────────────────────────────────────────────────────────
 // Đổi thành IP/domain VPS của bạn và port FastAPI
-static const char*    WS_HOST = "192.168.1.209";
+static const char*    WS_HOST = "172.31.98.3";
 static const uint16_t WS_PORT = 8000;
 static const char*    WS_PATH = "/ws/camera";   // endpoint WebSocket trên FastAPI
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 static const framesize_t FRAME_SIZE    = FRAMESIZE_QVGA;
-static const int         JPEG_QUALITY  = 12;           // 0=best, 63=worst
+static const int         JPEG_QUALITY  = 14;           // 0=best, 63=worst
 static const uint32_t    FRAME_INTERVAL_MS = 80;       // ~12.5 fps
 
 // ─── AI Thinker ESP32-CAM pins ───────────────────────────────────────────────
@@ -172,7 +172,8 @@ static bool init_camera() {
     cfg.pin_reset     = RESET_GPIO_NUM;
     cfg.xclk_freq_hz  = 20000000;
     cfg.pixel_format  = PIXFORMAT_JPEG;
-    cfg.grab_mode     = CAMERA_GRAB_LATEST;
+    // GRAB_WHEN_EMPTY is usually more stable with fb_count=2 on ESP32-CAM.
+    cfg.grab_mode     = CAMERA_GRAB_WHEN_EMPTY;
     cfg.fb_location   = CAMERA_FB_IN_PSRAM;
 
     if (psramFound()) {

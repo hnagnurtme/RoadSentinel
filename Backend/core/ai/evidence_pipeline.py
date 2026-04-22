@@ -22,8 +22,9 @@ import time
 import uuid
 from collections import deque
 from collections.abc import Callable
+from typing import Any, TypedDict
 
-from core.ai.annotator import annotate_evidence_jpeg
+from core.ai.annotator import annotate_evidence_frame
 from domain.alert.value_objects import AlertType
 from shared.config import settings
 
@@ -32,6 +33,14 @@ logger = logging.getLogger(__name__)
 EVIDENCE_DIR: pathlib.Path = (
     pathlib.Path(__file__).parents[3] / "evidence"
 )
+
+
+class EvidenceFramePacket(TypedDict):
+    jpeg_bytes: bytes
+    detections: list[dict]
+    event: str
+    duration_ms: int
+    confidence: float
 
 
 # ── Evidence Pipeline ─────────────────────────────────────────────────────────
@@ -72,8 +81,17 @@ class DriverEvidencePipeline:
         self._fps: int = max(1, settings.DRIVER_EVENT_EVIDENCE_FPS)
         self._window_seconds: int = max(1, settings.DRIVER_EVENT_EVIDENCE_SECONDS)
         self._codec: str = settings.DRIVER_EVENT_EVIDENCE_CODEC
+        self._codec_candidates: list[str] = [
+            codec.strip()
+            for codec in settings.DRIVER_EVENT_EVIDENCE_CODEC_CANDIDATES
+            if isinstance(codec, str) and codec.strip()
+        ]
+        if self._codec not in self._codec_candidates:
+            self._codec_candidates.append(self._codec)
 
-        self._buffer: deque[bytes] = deque(maxlen=self._fps * self._window_seconds)
+        self._buffer: deque[EvidenceFramePacket] = deque(
+            maxlen=self._fps * self._window_seconds
+        )
         self._cloudinary_ready: bool = False
 
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
@@ -83,10 +101,30 @@ class DriverEvidencePipeline:
     # Frame buffer management
     # ------------------------------------------------------------------
 
-    def push_frame(self, jpeg_bytes: bytes) -> None:
-        """Append a JPEG frame to the rolling evidence buffer."""
+    def push_frame(
+        self,
+        jpeg_bytes: bytes,
+        *,
+        detections: list[dict] | None = None,
+        event: str | None = None,
+        duration_ms: int = 0,
+        confidence: float = 0.0,
+    ) -> None:
+        """Append a frame to the rolling evidence buffer.
+
+        The hot streaming path can pass raw JPEG bytes only. When metadata is
+        provided, clip encoding will add overlays (bbox + event banner).
+        """
         if self._enabled:
-            self._buffer.append(jpeg_bytes)
+            self._buffer.append(
+                {
+                    "jpeg_bytes": jpeg_bytes,
+                    "detections": [dict(det) for det in (detections or [])],
+                    "event": event or self._event_key,
+                    "duration_ms": max(0, int(duration_ms)),
+                    "confidence": float(confidence),
+                }
+            )
 
     def reset_buffer(self) -> None:
         """Clear the evidence buffer (called when an event starts or ends)."""
@@ -107,18 +145,31 @@ class DriverEvidencePipeline:
         if not self._enabled:
             return None
 
-        frames = list(self._buffer)
-        if not frames:
+        packets = list(self._buffer)
+        if not packets:
             return None
 
         # Encode clip from buffered JPEG frames.
-        clip_path = self._encode_clip(frames)
+        clip_path = self._encode_clip(packets)
         evidence_url: str | None = None
         if clip_path is not None:
             local_url = (
                 f"{settings.APP_PUBLIC_BASE_URL}/evidence/{clip_path.name}"
             )
-            evidence_url = self._upload_cloudinary(clip_path, confidence) or local_url
+            uploaded_url = self._upload_cloudinary(clip_path, confidence)
+            if uploaded_url:
+                evidence_url = uploaded_url
+                if not settings.DRIVER_EVENT_EVIDENCE_KEEP_LOCAL_AFTER_UPLOAD:
+                    try:
+                        clip_path.unlink(missing_ok=True)
+                    except Exception:
+                        logger.warning(
+                            "Uploaded evidence to Cloudinary but failed to remove local file: %s",
+                            clip_path,
+                            exc_info=True,
+                        )
+            else:
+                evidence_url = local_url
 
         alert_message = (
             f"{self._MESSAGES.get(self._event_key, 'Driver event detected')}"
@@ -165,21 +216,35 @@ class DriverEvidencePipeline:
     # Private: video encoding
     # ------------------------------------------------------------------
 
-    def _encode_clip(self, frames: list[bytes]) -> pathlib.Path | None:
-        """Encode a list of JPEG frames into an MP4 clip.
+    def _encode_clip(self, packets: list[EvidenceFramePacket]) -> pathlib.Path | None:
+        """Encode buffered frames into an MP4 clip.
+
+        Each frame is annotated lazily at save-time so the real-time websocket
+        loop is not blocked by cv2 drawing work.
 
         Returns the path to the written file, or ``None`` on failure.
         """
-        if not frames:
+        if not packets:
             return None
 
         import cv2 as _cv2  # type: ignore
         import numpy as _np  # type: ignore
 
-        first = _cv2.imdecode(_np.frombuffer(frames[0], dtype=_np.uint8), _cv2.IMREAD_COLOR)
-        if first is None:
+        decoded_packets: list[tuple[EvidenceFramePacket, Any]] = []
+        for packet in packets:
+            frame = _cv2.imdecode(
+                _np.frombuffer(packet["jpeg_bytes"], dtype=_np.uint8),
+                _cv2.IMREAD_COLOR,
+            )
+            if frame is None:
+                continue
+            decoded_packets.append((packet, frame))
+
+        if not decoded_packets:
+            logger.warning("Evidence encode skipped: no decodable frames in buffer")
             return None
 
+        first = decoded_packets[0][1]
         h, w = first.shape[:2]
         clip_name = (
             f"{self._event_key}_"
@@ -188,30 +253,61 @@ class DriverEvidencePipeline:
         )
         clip_path = EVIDENCE_DIR / clip_name
 
-        writer = _cv2.VideoWriter(
-            str(clip_path),
-            _cv2.VideoWriter_fourcc(*self._codec),
-            float(self._fps),
-            (w, h),
-        )
-        if not writer.isOpened():
+        writer, selected_codec = self._resolve_writer(_cv2, clip_path, w, h)
+        if writer is None:
             clip_path.unlink(missing_ok=True)
             return None
+        logger.info("Evidence encoder selected codec=%s", selected_codec)
 
+        written_frames = 0
         try:
-            for jpeg in frames:
-                frame = _cv2.imdecode(
-                    _np.frombuffer(jpeg, dtype=_np.uint8), _cv2.IMREAD_COLOR
-                )
-                if frame is None:
-                    continue
+            for packet, frame in decoded_packets:
                 if frame.shape[1] != w or frame.shape[0] != h:
                     frame = _cv2.resize(frame, (w, h), interpolation=_cv2.INTER_LINEAR)
+
+                annotate_evidence_frame(
+                    frame,
+                    detections=packet["detections"],
+                    event=packet["event"],
+                    duration_ms=packet["duration_ms"],
+                    confidence=packet["confidence"],
+                )
                 writer.write(frame)
+                written_frames += 1
         finally:
             writer.release()
 
+        if written_frames == 0:
+            logger.warning("Evidence encode failed: writer opened but no frames were written")
+            clip_path.unlink(missing_ok=True)
+            return None
+
         return clip_path
+
+    def _resolve_writer(
+        self, cv2: object, clip_path: pathlib.Path, width: int, height: int
+    ) -> tuple[Any | None, str | None]:
+        """Try configured codecs in order and return the first working writer."""
+        tried: list[str] = []
+        for codec in self._codec_candidates:
+            if len(codec) != 4:
+                continue
+            tried.append(codec)
+            writer = cv2.VideoWriter(  # type: ignore[attr-defined]
+                str(clip_path),
+                cv2.VideoWriter_fourcc(*codec),  # type: ignore[attr-defined]
+                float(self._fps),
+                (width, height),
+            )
+            if writer.isOpened():
+                return writer, codec
+            writer.release()
+
+        logger.warning(
+            "No evidence codec available from candidates: %s. Install/enable FFmpeg or switch codec list.",
+            ",".join(tried),
+        )
+        return None, None
 
     # ------------------------------------------------------------------
     # Private: Cloudinary upload
