@@ -9,6 +9,8 @@ const WS_BASE = (import.meta.env.VITE_WS_ALERTS_URL as string | undefined)
   ? (import.meta.env.VITE_WS_ALERTS_URL as string).replace(/\/alerts$/, "")
   : "ws://localhost:8000/api/v1/ws";
 const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8000/api/v1";
+const UI_FRAME_INTERVAL_MS = 66;
+const UI_STATS_INTERVAL_MS = 400;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -97,6 +99,15 @@ function useCameraStream(deviceId: string) {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pingTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const alertTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const latestFrameRef = useRef<{
+    frameIdx: number;
+    jpeg: string;
+    detections: Detection[];
+    eventTiming: FrameMessage["event_timing"] | null;
+  } | null>(null);
+  const lastRenderedFrameRef = useRef(0);
+  const totalFramesRef = useRef(0);
+  const lastStatsUpdateRef = useRef(0);
 
   const connect = useCallback(() => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
@@ -124,17 +135,25 @@ function useCameraStream(deviceId: string) {
 
       if (data.type === "frame") {
         const frame = data as FrameMessage;
-        setLastJpeg(frame.jpeg);
-        setDetections(frame.detections ?? []);
-        setEventTiming(frame.event_timing ?? null);
-        setTotalFrames((n: number) => n + 1);
+        latestFrameRef.current = {
+          frameIdx: frame.frame_idx,
+          jpeg: frame.jpeg,
+          detections: frame.detections ?? [],
+          eventTiming: frame.event_timing ?? null,
+        };
+        totalFramesRef.current += 1;
 
         // FPS calculation
         const now = Date.now();
         frameTimestamps.current.push(now);
         const cutoff = now - 2000;
         frameTimestamps.current = frameTimestamps.current.filter((t: number) => t >= cutoff);
-        setFps(Math.round((frameTimestamps.current.length / 2) * 10) / 10);
+
+        if (now - lastStatsUpdateRef.current >= UI_STATS_INTERVAL_MS) {
+          lastStatsUpdateRef.current = now;
+          setFps(Math.round((frameTimestamps.current.length / 2) * 10) / 10);
+          setTotalFrames(totalFramesRef.current);
+        }
       } else if (data.type === "pong") {
         const pong = data as PongMessage;
         setCameraOnline(pong.camera);
@@ -195,6 +214,28 @@ function useCameraStream(deviceId: string) {
     };
   }, [connect]);
 
+  useEffect(() => {
+    const frameTimer = window.setInterval(() => {
+      const latest = latestFrameRef.current;
+      if (!latest) {
+        return;
+      }
+
+      if (latest.frameIdx === lastRenderedFrameRef.current) {
+        return;
+      }
+
+      lastRenderedFrameRef.current = latest.frameIdx;
+      setLastJpeg(latest.jpeg);
+      setDetections(latest.detections);
+      setEventTiming(latest.eventTiming);
+    }, UI_FRAME_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(frameTimer);
+    };
+  }, []);
+
   const sendCommand = useCallback((cmd: Record<string, unknown>) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(cmd));
@@ -204,10 +245,15 @@ function useCameraStream(deviceId: string) {
   const reconnect = useCallback(() => {
     if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
     wsRef.current?.close();
+    totalFramesRef.current = 0;
+    lastStatsUpdateRef.current = 0;
+    latestFrameRef.current = null;
+    lastRenderedFrameRef.current = 0;
     setTotalFrames(0);
     frameTimestamps.current = [];
     setFps(0);
     setLastJpeg(null);
+    setDetections([]);
     setEventTiming(null);
     setLiveAlerts([]);
     setTimeout(connect, 300);
@@ -253,29 +299,67 @@ function useDrivers() {
 interface LiveCanvasProps {
   jpeg: string | null;
   detections: Detection[];
-  eventTiming: FrameMessage["event_timing"] | null;
   cameraOnline: boolean;
   isConnected: boolean;
 }
 
-function LiveCanvas({ jpeg, detections, eventTiming, cameraOnline, isConnected }: LiveCanvasProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+function LiveCanvas({ jpeg, detections, cameraOnline, isConnected }: LiveCanvasProps) {
+  const frameCanvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef(new Image());
   const pendingRef = useRef<string | null>(null);
   const decodingRef = useRef(false);
   const detectionsRef = useRef<Detection[]>([]);
-  const eventTimingRef = useRef<FrameMessage["event_timing"] | null>(null);
 
   // Keep latest detections in a ref so the draw callback always has them
   useEffect(() => { detectionsRef.current = detections; }, [detections]);
-  useEffect(() => { eventTimingRef.current = eventTiming; }, [eventTiming]);
+
+  const drawAnnotations = useCallback(() => {
+    const overlayCanvas = overlayCanvasRef.current;
+    const frameCanvas = frameCanvasRef.current;
+    if (!overlayCanvas || !frameCanvas) {
+      return;
+    }
+
+    if (overlayCanvas.width !== frameCanvas.width || overlayCanvas.height !== frameCanvas.height) {
+      overlayCanvas.width = frameCanvas.width;
+      overlayCanvas.height = frameCanvas.height;
+    }
+
+    const ctx = overlayCanvas.getContext("2d");
+    if (!ctx) {
+      return;
+    }
+
+    ctx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+
+    for (const det of detectionsRef.current) {
+      const [x1, y1, x2, y2] = det.bbox;
+      const label = `${det.label} ${(det.conf * 100).toFixed(0)}%`;
+
+      ctx.strokeStyle = "#00ff88";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+
+      ctx.font = "bold 11px Inter, sans-serif";
+      const textWidth = ctx.measureText(label).width;
+      ctx.fillStyle = "rgba(0,255,136,0.85)";
+      ctx.fillRect(x1, y1 - 16, textWidth + 6, 16);
+      ctx.fillStyle = "#000";
+      ctx.fillText(label, x1 + 3, y1 - 3);
+    }
+  }, []);
+
+  useEffect(() => {
+    drawAnnotations();
+  }, [detections, drawAnnotations]);
 
   useEffect(() => {
     if (!jpeg) return;
 
     const img = imgRef.current;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+    const frameCanvas = frameCanvasRef.current;
+    if (!frameCanvas) return;
 
     pendingRef.current = jpeg;
 
@@ -286,47 +370,18 @@ function LiveCanvas({ jpeg, detections, eventTiming, cameraOnline, isConnected }
       pendingRef.current = null;
 
       img.onload = () => {
-        if (canvas.width !== img.width || canvas.height !== img.height) {
-          canvas.width = img.width;
-          canvas.height = img.height;
+        if (frameCanvas.width !== img.width || frameCanvas.height !== img.height) {
+          frameCanvas.width = img.width;
+          frameCanvas.height = img.height;
         }
-        const ctx = canvas.getContext("2d");
+
+        const ctx = frameCanvas.getContext("2d");
         if (ctx) {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.clearRect(0, 0, frameCanvas.width, frameCanvas.height);
           ctx.drawImage(img, 0, 0);
-
-          // Draw bounding boxes
-          for (const det of detectionsRef.current) {
-            const [x1, y1, x2, y2] = det.bbox;
-            const label = `${det.label} ${(det.conf * 100).toFixed(0)}%`;
-            // Box
-            ctx.strokeStyle = "#00ff88";
-            ctx.lineWidth   = 2;
-            ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-            // Label background
-            ctx.font = "bold 11px Inter, sans-serif";
-            const tw = ctx.measureText(label).width;
-            ctx.fillStyle = "rgba(0,255,136,0.85)";
-            ctx.fillRect(x1, y1 - 16, tw + 6, 16);
-            // Label text
-            ctx.fillStyle = "#000";
-            ctx.fillText(label, x1 + 3, y1 - 3);
-          }
-
-          const timing = eventTimingRef.current;
-          if (timing?.active) {
-            const eventName = timing.event.replaceAll("_", " ").toUpperCase();
-            const seconds = Math.max(0, Math.floor((timing.duration_ms ?? 0) / 1000));
-            const timingLabel = `${eventName} ${seconds}s`;
-
-            ctx.font = "bold 14px Inter, sans-serif";
-            const tw = ctx.measureText(timingLabel).width;
-            ctx.fillStyle = "rgba(220,38,38,0.9)";
-            ctx.fillRect(12, 44, tw + 18, 26);
-            ctx.fillStyle = "#fff";
-            ctx.fillText(timingLabel, 20, 62);
-          }
         }
+
+        drawAnnotations();
         decodingRef.current = false;
         if (pendingRef.current) process();
       };
@@ -337,15 +392,21 @@ function LiveCanvas({ jpeg, detections, eventTiming, cameraOnline, isConnected }
     };
 
     process();
-  }, [jpeg]);
+  }, [jpeg, drawAnnotations]);
 
   return (
     <div className="relative w-full bg-black rounded-xl overflow-hidden" style={{ aspectRatio: "4/3" }}>
       <canvas
-        ref={canvasRef}
+        ref={frameCanvasRef}
         width={320}
         height={240}
         className="w-full h-full object-contain"
+      />
+      <canvas
+        ref={overlayCanvasRef}
+        width={320}
+        height={240}
+        className="absolute inset-0 w-full h-full object-contain pointer-events-none"
       />
       {/* Overlay when offline */}
       {(!isConnected || !cameraOnline) && (
@@ -369,6 +430,33 @@ function LiveCanvas({ jpeg, detections, eventTiming, cameraOnline, isConnected }
           <span className="text-[10px] font-bold text-white uppercase tracking-widest">Live</span>
         </div>
       )}
+    </div>
+  );
+}
+
+interface EventTimingPanelProps {
+  eventTiming: FrameMessage["event_timing"] | null;
+}
+
+function EventTimingPanel({ eventTiming }: EventTimingPanelProps) {
+  if (!eventTiming?.active) {
+    return (
+      <div className="rounded-lg bg-surface-container px-3 py-1.5">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-outline">Event Timer: Idle</span>
+      </div>
+    );
+  }
+
+  const seconds = Math.max(0, Math.floor((eventTiming.duration_ms ?? 0) / 1000));
+  const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
+  const ss = String(seconds % 60).padStart(2, "0");
+  const eventName = eventTiming.event.replaceAll("_", " ");
+
+  return (
+    <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-1.5 flex items-center gap-2">
+      <span className="text-[10px] font-bold uppercase tracking-wider text-red-700">Event Timer</span>
+      <span className="text-xs font-semibold text-red-900">{eventName}</span>
+      <span className="text-xs font-black tabular-nums text-red-700">{mm}:{ss}</span>
     </div>
   );
 }
@@ -659,6 +747,7 @@ export function Monitor({ deviceId }: MonitorProps) {
                 <span className="text-xs font-bold text-primary uppercase tracking-wider">
                   Live Feed
                 </span>
+                <EventTimingPanel eventTiming={eventTiming} />
                 {cameraOnline && (
                   <span className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
                     <Zap className="w-2.5 h-2.5" /> Streaming
@@ -685,7 +774,6 @@ export function Monitor({ deviceId }: MonitorProps) {
               <LiveCanvas
                 jpeg={lastJpeg}
                 detections={detections}
-                eventTiming={eventTiming}
                 cameraOnline={cameraOnline}
                 isConnected={isConnected}
               />

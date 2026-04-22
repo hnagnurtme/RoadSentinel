@@ -38,7 +38,6 @@ from typing import Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from core.ai.annotator import annotate_evidence_jpeg
 from core.ai.engine import SKIP_FRAMES, filter_detections, inference_engine
 from core.ai.event_classifier import ALERT_EVENTS, DriverEventClassifier, WindowTrigger
 from core.ai.evidence_pipeline import DriverEvidencePipeline, build_evidence_pipelines
@@ -314,7 +313,7 @@ async def camera_websocket(websocket: WebSocket) -> None:
     # Grace-period trackers — prevent flickering between detections.
     sleep_grace = _GraceTracker(settings.DRIVER_EVENT_SLEEPING_RELEASE_GRACE_SECONDS)
     phone_grace = _GraceTracker(settings.DRIVER_EVENT_PHONE_RELEASE_GRACE_SECONDS)
-    distracted_grace = _GraceTracker(settings.DRIVER_EVENT_PHONE_RELEASE_GRACE_SECONDS)
+    distracted_grace = _GraceTracker(settings.DRIVER_EVENT_DISTRACTED_RELEASE_GRACE_SECONDS)
     drowsy_grace = _GraceTracker(settings.DRIVER_EVENT_DROWSY_RELEASE_GRACE_SECONDS)
 
     # Evidence buffer state flags.
@@ -395,19 +394,17 @@ async def camera_websocket(websocket: WebSocket) -> None:
             is_phone = event == "using_phone"
             is_distracted = event == "distracted"
 
-            annotated = annotate_evidence_jpeg(
-                jpeg_bytes=jpeg_bytes,
-                detections=last_dets,
-                event=event,
-                duration_ms=event_duration_ms,
-                confidence=confidence,
-            )
-
             # Sleeping evidence
             if is_sleeping:
                 if not was_sleeping:
                     sleep_pipeline.reset_buffer()
-                sleep_pipeline.push_frame(annotated)
+                sleep_pipeline.push_frame(
+                    jpeg_bytes,
+                    detections=last_dets,
+                    event=event,
+                    duration_ms=event_duration_ms,
+                    confidence=confidence,
+                )
             elif was_sleeping:
                 sleep_pipeline.reset_buffer()
 
@@ -415,7 +412,13 @@ async def camera_websocket(websocket: WebSocket) -> None:
             if is_phone:
                 if not was_phone:
                     phone_pipeline.reset_buffer()
-                phone_pipeline.push_frame(annotated)
+                phone_pipeline.push_frame(
+                    jpeg_bytes,
+                    detections=last_dets,
+                    event=event,
+                    duration_ms=event_duration_ms,
+                    confidence=confidence,
+                )
             elif was_phone:
                 phone_pipeline.reset_buffer()
 
@@ -423,7 +426,13 @@ async def camera_websocket(websocket: WebSocket) -> None:
             if is_distracted:
                 if not was_distracted:
                     distracted_pipeline.reset_buffer()
-                distracted_pipeline.push_frame(annotated)
+                distracted_pipeline.push_frame(
+                    jpeg_bytes,
+                    detections=last_dets,
+                    event=event,
+                    duration_ms=event_duration_ms,
+                    confidence=confidence,
+                )
             elif was_distracted:
                 distracted_pipeline.reset_buffer()
 
@@ -533,7 +542,7 @@ async def camera_websocket(websocket: WebSocket) -> None:
                         "device": camera_mgr.device_id,
                     }
                 )
-                asyncio.create_task(frontend_mgr.broadcast(payload))
+                await frontend_mgr.broadcast(payload)
 
             # Periodic diagnostic log (every 5 s)
             now_wall = time.time()
