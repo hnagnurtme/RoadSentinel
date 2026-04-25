@@ -31,13 +31,22 @@ jobs:
     needs: [prepare]
     if: needs.prepare.outputs['init-infra'] == 'true'
     uses: shipyard-io/templates/.github/workflows/reusable-provision-vps.yml@main
-    secrets: inherit
+    secrets:
+      SERVER_IP: ${{ secrets.SERVER_IP }}
+      SERVER_USER: ${{ secrets.SERVER_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
 
   setup-traefik:
     needs: [prepare, setup-vps]
     if: always() && needs.prepare.outputs['init-infra'] == 'true' && (needs.setup-vps.result == 'success' || needs.setup-vps.result == 'skipped')
     uses: shipyard-io/templates/.github/workflows/reusable-upgrade-traefik.yml@main
-    secrets: inherit
+    secrets:
+      SERVER_IP: ${{ secrets.SERVER_IP }}
+      SERVER_USER: ${{ secrets.SERVER_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      CLOUDFLARE_ORIGIN_CERT: ${{ secrets.CLOUDFLARE_ORIGIN_CERT }}
+      CLOUDFLARE_ORIGIN_KEY: ${{ secrets.CLOUDFLARE_ORIGIN_KEY }}
+      TRAEFIK_DASHBOARD_AUTH: ${{ secrets.TRAEFIK_DASHBOARD_AUTH }}
 
   deploy:
     needs: [prepare, build, setup-traefik]
@@ -47,7 +56,11 @@ jobs:
       app-name: ${{ needs.prepare.outputs['app-name'] }}
       image-tag: ${{ needs.build.outputs['image-tag'] }}
       health-check-path: ${{ needs.prepare.outputs['health-check-path'] }}
-    secrets: inherit
+    secrets:
+      SERVER_IP: ${{ secrets.SERVER_IP }}
+      SERVER_USER: ${{ secrets.SERVER_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      ENV_FILE_CONTENT: ${{ secrets.ENV_FILE_CONTENT }}
 
   notify:
     needs: [prepare, build, deploy]
@@ -59,4 +72,6 @@ jobs:
       status: ${{ needs.deploy.result }}
       commit-message: ${{ github.event.head_commit.message }}
       actor: ${{ github.actor }}
-    secrets: inherit
+    secrets:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
