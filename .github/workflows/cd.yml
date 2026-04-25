@@ -59,7 +59,6 @@ jobs:
       SERVER_USER: ${{ secrets.SERVER_USER }}
       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
       ENV_FILE_CONTENT: ${{ secrets.ENV_FILE_CONTENT }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   notify:
     needs: [prepare, build, deploy]
