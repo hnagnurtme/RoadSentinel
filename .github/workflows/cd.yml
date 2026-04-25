@@ -23,6 +23,8 @@ jobs:
     uses: shipyard-io/templates/.github/workflows/reusable-build-docker.yml@main
     with:
       app-name: ${{ needs.prepare.outputs['app-name'] }}
+      dockerfile: "Backend/Dockerfile"
+      context: "Backend"
     secrets: inherit
 
   setup-vps:
