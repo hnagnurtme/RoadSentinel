@@ -1,12 +1,8 @@
-name: CD
+name: CI/CD
 
 on:
   push:
     branches: [develop, main]
-    paths:
-      - 'Backend/**'
-      - 'Devops/Backend/**'
-      - '.github/workflows/cd.yml'
 
 permissions:
   contents: read
@@ -23,33 +19,19 @@ jobs:
     uses: shipyard-io/templates/.github/workflows/reusable-build-docker.yml@main
     with:
       app-name: ${{ needs.prepare.outputs['app-name'] }}
-      dockerfile: "Backend/Dockerfile"
-      context: "Backend"
     secrets: inherit
 
   setup-vps:
     needs: [prepare]
     if: needs.prepare.outputs['init-infra'] == 'true'
     uses: shipyard-io/templates/.github/workflows/reusable-provision-vps.yml@main
-    secrets:
-      SERVER_IP: ${{ secrets.SERVER_IP }}
-      SERVER_USER: ${{ secrets.SERVER_USER }}
-      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-      CLOUDFLARE_ORIGIN_CERT: ${{ secrets.CLOUDFLARE_ORIGIN_CERT }}
-      CLOUDFLARE_ORIGIN_KEY: ${{ secrets.CLOUDFLARE_ORIGIN_KEY }}
+    secrets: inherit
 
   setup-traefik:
     needs: [prepare, setup-vps]
     if: always() && needs.prepare.outputs['init-infra'] == 'true' && (needs.setup-vps.result == 'success' || needs.setup-vps.result == 'skipped')
     uses: shipyard-io/templates/.github/workflows/reusable-upgrade-traefik.yml@main
-    secrets:
-      SERVER_IP: ${{ secrets.SERVER_IP }}
-      SERVER_USER: ${{ secrets.SERVER_USER }}
-      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-      CLOUDFLARE_ORIGIN_CERT: ${{ secrets.CLOUDFLARE_ORIGIN_CERT }}
-      CLOUDFLARE_ORIGIN_KEY: ${{ secrets.CLOUDFLARE_ORIGIN_KEY }}
-      TRAEFIK_DASHBOARD_AUTH: ${{ secrets.TRAEFIK_DASHBOARD_AUTH }}
-      DOMAIN: ${{ secrets.DOMAIN }}
+    secrets: inherit
 
   deploy:
     needs: [prepare, build, setup-traefik]
@@ -59,11 +41,7 @@ jobs:
       app-name: ${{ needs.prepare.outputs['app-name'] }}
       image-tag: ${{ needs.build.outputs['image-tag'] }}
       health-check-path: ${{ needs.prepare.outputs['health-check-path'] }}
-    secrets:
-      SERVER_IP: ${{ secrets.SERVER_IP }}
-      SERVER_USER: ${{ secrets.SERVER_USER }}
-      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-      ENV_FILE_CONTENT: ${{ secrets.ENV_FILE_CONTENT }}
+    secrets: inherit
 
   notify:
     needs: [prepare, build, deploy]
@@ -75,6 +53,4 @@ jobs:
       status: ${{ needs.deploy.result }}
       commit-message: ${{ github.event.head_commit.message }}
       actor: ${{ github.actor }}
-    secrets:
-      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    secrets: inherit
