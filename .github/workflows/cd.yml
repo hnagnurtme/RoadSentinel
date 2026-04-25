@@ -3,10 +3,6 @@ name: CD
 on:
   push:
     branches: [develop, main]
-    paths:
-      - 'Backend/**'
-      - 'Devops/Backend/**'
-      - '.github/workflows/cd.yml'
 
 permissions:
   contents: read
