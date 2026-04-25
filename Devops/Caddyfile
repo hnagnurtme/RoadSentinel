@@ -1,5 +1,0 @@
-{$DOMAIN} {
-  encode gzip zstd
-
-  reverse_proxy backend:8000
-}
