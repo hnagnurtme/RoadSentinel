@@ -1,6 +1,6 @@
+import uuid
 from dataclasses import dataclass
 from datetime import datetime
-import uuid
 
 
 @dataclass
@@ -16,3 +16,8 @@ class VehicleEntity:
     _created_at: datetime | None = None
     _updated_at: datetime | None = None
     _deleted_at: datetime | None = None
+
+    def __post_init__(self) -> None:
+        """Normalize plate number to uppercase for consistent storage and lookup."""
+        if self.plate_number:
+            self.plate_number = self.plate_number.strip().upper()

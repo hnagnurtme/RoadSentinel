@@ -16,7 +16,7 @@ class CreateVehicleHandler:
         )
 
         vehicle = VehicleEntity(
-            plate_number=command.plate_number.strip().upper(),
+            plate_number=command.plate_number,
             manufacturer=command.manufacturer,
             model=command.model,
             vehicle_image_url=command.vehicle_image_url,

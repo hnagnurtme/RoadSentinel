@@ -13,6 +13,7 @@ Key design decisions vs. the original implementation
 - Clip encoding and cloud upload are pure helper methods that can be tested
   or mocked independently.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -30,9 +31,7 @@ from shared.config import settings
 
 logger = logging.getLogger(__name__)
 
-EVIDENCE_DIR: pathlib.Path = (
-    pathlib.Path(__file__).parents[3] / "evidence"
-)
+EVIDENCE_DIR: pathlib.Path = pathlib.Path(__file__).parents[3] / "evidence"
 
 
 class EvidenceFramePacket(TypedDict):
@@ -72,10 +71,12 @@ class DriverEvidencePipeline:
         event_key: str,
         alert_type: AlertType,
         session_factory: Callable,
+        save_alert: Callable[[object, str, str | None], dict | None] | None = None,
     ) -> None:
         self._event_key = event_key
         self._alert_type = alert_type
         self._session_factory = session_factory
+        self._save_alert = save_alert
 
         self._enabled: bool = settings.DRIVER_EVENT_EVIDENCE_ENABLED
         self._fps: int = max(1, settings.DRIVER_EVENT_EVIDENCE_FPS)
@@ -153,9 +154,7 @@ class DriverEvidencePipeline:
         clip_path = self._encode_clip(packets)
         evidence_url: str | None = None
         if clip_path is not None:
-            local_url = (
-                f"{settings.APP_PUBLIC_BASE_URL}/evidence/{clip_path.name}"
-            )
+            local_url = f"{settings.APP_PUBLIC_BASE_URL}/evidence/{clip_path.name}"
             uploaded_url = self._upload_cloudinary(clip_path, confidence)
             if uploaded_url:
                 evidence_url = uploaded_url
@@ -181,7 +180,10 @@ class DriverEvidencePipeline:
             return self._persist_alert(db, alert_message, evidence_url)
         except Exception as exc:
             logger.error(
-                "Failed to create %s alert in DB: %s", self._event_key, exc, exc_info=True
+                "Failed to create %s alert in DB: %s",
+                self._event_key,
+                exc,
+                exc_info=True,
             )
             return None
         finally:
@@ -195,9 +197,7 @@ class DriverEvidencePipeline:
         if not settings.DRIVER_EVENT_CLOUDINARY_ENABLED:
             return
         if importlib.util.find_spec("cloudinary") is None:
-            logger.warning(
-                "Cloudinary SDK not installed; evidence upload disabled"
-            )
+            logger.warning("Cloudinary SDK not installed; evidence upload disabled")
             return
         try:
             import cloudinary  # type: ignore
@@ -278,7 +278,9 @@ class DriverEvidencePipeline:
             writer.release()
 
         if written_frames == 0:
-            logger.warning("Evidence encode failed: writer opened but no frames were written")
+            logger.warning(
+                "Evidence encode failed: writer opened but no frames were written"
+            )
             clip_path.unlink(missing_ok=True)
             return None
 
@@ -322,9 +324,67 @@ class DriverEvidencePipeline:
         try:
             import cloudinary.uploader  # type: ignore
 
-            public_id = (
-                f"{self._event_key}/{time.strftime('%Y-%m-%d')}/{uuid.uuid4()}"
+            public_id = f"{self._event_key}/{time.strftime('%Y-%m-%d')}/{uuid.uuid4()}"
+            result = cloudinary.uploader.upload(  # type: ignore
+                str(clip_path),
+                resource_type="video",
+                public_id=public_id,
+                folder=settings.DRIVER_EVENT_CLOUDINARY_FOLDER,
+                overwrite=False,
+                format="mp4",
+                context={
+                    "event": self._event_key,
+                    "confidence": f"{confidence:.4f}",
+                },
             )
+            if isinstance(result, dict):
+                return result.get("secure_url")
+        except Exception as exc:
+            logger.error("Cloudinary upload failed: %s", exc, exc_info=True)
+        return None
+
+    # ------------------------------------------------------------------
+    # Private: DB persistence
+
+    def _resolve_writer(
+        self, cv2: object, clip_path: pathlib.Path, width: int, height: int
+    ) -> tuple[Any | None, str | None]:
+        """Try configured codecs in order and return the first working writer."""
+        tried: list[str] = []
+        for codec in self._codec_candidates:
+            if len(codec) != 4:
+                continue
+            tried.append(codec)
+            writer = cv2.VideoWriter(  # type: ignore[attr-defined]
+                str(clip_path),
+                cv2.VideoWriter_fourcc(*codec),  # type: ignore[attr-defined]
+                float(self._fps),
+                (width, height),
+            )
+            if writer.isOpened():
+                return writer, codec
+            writer.release()
+
+        logger.warning(
+            "No evidence codec available from candidates: %s. Install/enable FFmpeg or switch codec list.",
+            ",".join(tried),
+        )
+        return None, None
+
+    # ------------------------------------------------------------------
+    # Private: Cloudinary upload
+    # ------------------------------------------------------------------
+
+    def _upload_cloudinary(
+        self, clip_path: pathlib.Path, confidence: float
+    ) -> str | None:
+        """Upload clip to Cloudinary and return the secure URL, or ``None``."""
+        if not self._cloudinary_ready:
+            return None
+        try:
+            import cloudinary.uploader  # type: ignore
+
+            public_id = f"{self._event_key}/{time.strftime('%Y-%m-%d')}/{uuid.uuid4()}"
             result = cloudinary.uploader.upload(  # type: ignore
                 str(clip_path),
                 resource_type="video",
@@ -350,42 +410,13 @@ class DriverEvidencePipeline:
     def _persist_alert(
         self, db: object, message: str, evidence_url: str | None
     ) -> dict | None:
-        """Create an alert record through the application layer and return its
+        """Create an alert record through the injected save_alert callable and return its
         serialised form."""
-        from application.alert.commands.create_alert import CreateAlertCommand
-        from application.alert.commands.create_alert_handler import CreateAlertHandler
-        from infrastructure.repositories.alert_repository_impl import AlertRepositoryImpl
+        if self._save_alert is None:
+            logger.warning("No save_alert callable provided - alert not persisted")
+            return None
 
-        repository = AlertRepositoryImpl(db)  # type: ignore[arg-type]
-        handler = CreateAlertHandler(repository)
-        alert = handler.handle(
-            CreateAlertCommand(
-                message=message,
-                alert_type=self._alert_type,
-                device_id=settings.DRIVER_EVENT_ALERT_DEVICE_ID,
-                driver_id=settings.DRIVER_EVENT_ALERT_DRIVER_ID,
-                vehicle_id=settings.DRIVER_EVENT_ALERT_VEHICLE_ID,
-                evidence_url=evidence_url,
-                latitude=None,
-                longitude=None,
-            )
-        )
-        return {
-            "_id": str(alert._id) if alert._id else None,
-            "message": alert.message,
-            "alert_type": alert.alert_type.value,
-            "device_id": str(alert.device_id),
-            "driver_id": str(alert.driver_id) if alert.driver_id else None,
-            "vehicle_id": str(alert.vehicle_id) if alert.vehicle_id else None,
-            "evidence_url": alert.evidence_url,
-            "latitude": alert.latitude,
-            "longitude": alert.longitude,
-            "user": None,
-            "vehicle": None,
-            "_created_at": alert._created_at.isoformat() if alert._created_at else None,
-            "_updated_at": alert._updated_at.isoformat() if alert._updated_at else None,
-            "_deleted_at": alert._deleted_at.isoformat() if alert._deleted_at else None,
-        }
+        return self._save_alert(db, message, evidence_url)
 
 
 # ── Factory helper ────────────────────────────────────────────────────────────
@@ -393,6 +424,7 @@ class DriverEvidencePipeline:
 
 def build_evidence_pipelines(
     session_factory: Callable,
+    save_alert: Callable[[object, str, str | None], dict | None] | None = None,
 ) -> tuple[DriverEvidencePipeline, DriverEvidencePipeline, DriverEvidencePipeline]:
     """Construct the sleeping, phone and distracted evidence pipelines.
 
@@ -403,15 +435,18 @@ def build_evidence_pipelines(
         event_key="sleeping",
         alert_type=AlertType.SLEEPING,
         session_factory=session_factory,
+        save_alert=save_alert,
     )
     phone_pipeline = DriverEvidencePipeline(
         event_key="using_phone",
         alert_type=AlertType.USING_PHONE,
         session_factory=session_factory,
+        save_alert=save_alert,
     )
     distracted_pipeline = DriverEvidencePipeline(
         event_key="distracted",
         alert_type=AlertType.DISTRACTED,
         session_factory=session_factory,
+        save_alert=save_alert,
     )
     return sleep_pipeline, phone_pipeline, distracted_pipeline

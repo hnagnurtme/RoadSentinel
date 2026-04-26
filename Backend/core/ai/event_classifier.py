@@ -33,6 +33,7 @@ presence
   If no presence label is seen for ``UNKNOWN_ENTER_FRAMES`` frames the state
   is ``"unknown"`` (camera may be covered or driver absent).
 """
+
 from __future__ import annotations
 
 from collections import deque
@@ -79,25 +80,17 @@ class DriverEventClassifier:
     _LABEL_SETS: Final[dict[str, frozenset[str]]] = {
         # Sleeping: eyes shut = direct physiological sign of sleeping.
         # "Yawning" intentionally excluded — yawning ≠ sleeping.
-        "sleeping": frozenset(
-            {"eyes closed"}
-        ),
+        "sleeping": frozenset({"eyes closed"}),
         # Drowsy: fatigue warning. Yawning alone is NOT sleeping.
         # After sustained yawning the caller escalates urgency.
-        "drowsy": frozenset(
-            {"yawning"}
-        ),
+        "drowsy": frozenset({"yawning"}),
         # Phone use: mobile label only (the model was trained on this exact class).
-        "using_phone": frozenset(
-            {"mobile"}
-        ),
+        "using_phone": frozenset({"mobile"}),
         # Distracted: looking away, drinking while driving, no seat belt.
         # All three share the same evidence pipeline and DISTRACTED AlertType.
         # NOTE: 'drinking' ≠ 'using phone' — separate class in training data.
         # NOTE: 'seat belt' = safety-belt violation detected by model.
-        "distracted": frozenset(
-            {"distracted", "drinking", "seat belt"}
-        ),
+        "distracted": frozenset({"distracted", "drinking", "seat belt"}),
     }
 
     def __init__(self) -> None:
@@ -182,7 +175,9 @@ class DriverEventClassifier:
             event.strip().lower() for event in settings.DRIVER_EVENT_PRIORITY
         )
         self._unknown_enter_frames: int = settings.DRIVER_EVENT_UNKNOWN_ENTER_FRAMES
-        self._drowsy_escalation_seconds: float = settings.DRIVER_EVENT_DROWSY_ESCALATION_SECONDS
+        self._drowsy_escalation_seconds: float = (
+            settings.DRIVER_EVENT_DROWSY_ESCALATION_SECONDS
+        )
 
         # Drowsy-escalation tracking (wall-clock monotonic, set by caller).
         self._drowsy_active_since: float | None = None
@@ -239,7 +234,7 @@ class DriverEventClassifier:
         denominator = 0.0
 
         for age, conf in enumerate(reversed(frames)):
-            weight = self._window_decay ** age
+            weight = self._window_decay**age
             normalized = min(1.0, max(0.0, conf) / floor)
             numerator += normalized * weight
             denominator += weight
@@ -296,7 +291,11 @@ class DriverEventClassifier:
                 state = "idle"
         elif state in {"confirmed", "held"}:
             if score <= deactivate:
-                state = "held" if self._release_streaks[event] < hold_frames else "releasing"
+                state = (
+                    "held"
+                    if self._release_streaks[event] < hold_frames
+                    else "releasing"
+                )
             else:
                 state = "confirmed"
 
@@ -412,12 +411,14 @@ class DriverEventClassifier:
 
         Callers should treat this as sleeping-level urgency even though the
         YOLO label is still "drowsy" (no eyes-closed label was detected).
+
+        DEPRECATED: This property is not implemented. Use get_drowsy_duration(now)
+        instead and compare with DROWSY_ESCALATION_SECONDS.
         """
-        if self._drowsy_active_since is None:
-            return False
-        # We need a monotonic time — use the last stored value; if not yet set
-        # we cannot know.  Callers should use get_drowsy_duration(now) instead.
-        return False  # Exposed via get_drowsy_duration() for explicit now param.
+        raise NotImplementedError(
+            "drowsy_escalated property is not implemented. "
+            "Use get_drowsy_duration(now) and compare with DROWSY_ESCALATION_SECONDS."
+        )
 
     def reset(self) -> None:
         """Reset all internal state (call on ESP32 disconnect)."""
@@ -463,7 +464,9 @@ class WindowTrigger:
             required to fire.  ``1.0`` means *every* frame must be positive.
     """
 
-    def __init__(self, fps: int, window_seconds: int, occupancy_threshold: float) -> None:
+    def __init__(
+        self, fps: int, window_seconds: int, occupancy_threshold: float
+    ) -> None:
         self._window_frames: int = max(1, int(fps) * int(window_seconds))
         self._occupancy_threshold: float = occupancy_threshold
         self._window: deque[bool] = deque(maxlen=self._window_frames)
