@@ -79,18 +79,14 @@ class DriverEventClassifier:
 
     _LABEL_SETS: Final[dict[str, frozenset[str]]] = {
         # Sleeping: eyes shut = direct physiological sign of sleeping.
-        # "Yawning" intentionally excluded — yawning ≠ sleeping.
         "sleeping": frozenset({"eyes closed"}),
-        # Drowsy: fatigue warning. Yawning alone is NOT sleeping.
-        # After sustained yawning the caller escalates urgency.
+        # Drowsy: fatigue warning.
         "drowsy": frozenset({"yawning"}),
-        # Phone use: mobile label only (the model was trained on this exact class).
+        # Phone use: mobile label only.
         "using_phone": frozenset({"mobile"}),
-        # Distracted: looking away, drinking while driving, no seat belt.
-        # All three share the same evidence pipeline and DISTRACTED AlertType.
-        # NOTE: 'drinking' ≠ 'using phone' — separate class in training data.
-        # NOTE: 'seat belt' = safety-belt violation detected by model.
-        "distracted": frozenset({"distracted", "drinking", "seat belt"}),
+        # Distracted: looking away, drinking while driving, no seat belt, reaching behind.
+        # NOTE: model has NO 'distracted' class — real classes are mapped below.
+        "distracted": frozenset({"looking away", "reaching behind", "drinking", "seat belt"}),
     }
 
     def __init__(self) -> None:
@@ -179,8 +175,11 @@ class DriverEventClassifier:
             settings.DRIVER_EVENT_DROWSY_ESCALATION_SECONDS
         )
 
-        # Drowsy-escalation tracking (wall-clock monotonic, set by caller).
-        self._drowsy_active_since: float | None = None
+        # Event-active start times (wall-clock monotonic)
+        self._event_active_since: dict[str, float | None] = dict.fromkeys(
+            self._LABEL_SETS, None
+        )
+        self._drowsy_active_since: float | None = None  # Legacy, kept for compatibility
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -357,7 +356,10 @@ class DriverEventClassifier:
             self._candidate_streaks["sleeping"] = self._candidate_enter_frames
             self._release_streaks["sleeping"] = 0
             self._update_drowsy_timing(is_drowsy=False, now=now)
-            return "sleeping", explicit_sleeping_conf
+            all_active = ["sleeping"]
+            if self._event_active_since["sleeping"] is None and now is not None:
+                self._event_active_since["sleeping"] = now
+            return "sleeping", explicit_sleeping_conf, all_active
 
         # ── Fast-path for non-sleeping critical labels ───────────────────
         # Similar to the eyes-closed fast path, this gives one-frame promotion
@@ -376,34 +378,56 @@ class DriverEventClassifier:
         # ── Priority resolution ───────────────────────────────────────────
         # Walk the configured priority list. sleeping is expected to be first
         # since it is the most immediately dangerous state.
+        resolved_event: str | None = None
+        resolved_conf: float = 0.0
+
         for event in self._event_priority:
             if self._event_active.get(event, False):
-                # If sleeping won, drowsy timer resets (driver is asleep, not just drowsy).
-                is_drowsy = event == "drowsy"
-                self._update_drowsy_timing(is_drowsy=is_drowsy, now=now)
-                return event, event_confidence.get(event, 0.0)
+                resolved_event = event
+                resolved_conf = event_confidence.get(event, 0.0)
+                break
 
-        # Drowsy is intentionally checked after the priority list so that
-        # sleeping / phone / distracted always take precedence.
-        if self._event_active.get("drowsy", False):
-            self._update_drowsy_timing(is_drowsy=True, now=now)
-            return "drowsy", event_confidence.get("drowsy", 0.0)
+        if not resolved_event and self._event_active.get("drowsy", False):
+            resolved_event = "drowsy"
+            resolved_conf = event_confidence.get("drowsy", 0.0)
+
+        # ── Update start times and handle resolution ──────────────────────
+        all_active: list[str] = []
+        for event in self._LABEL_SETS:
+            is_active = (event == resolved_event)
+            if self._event_active.get(event, False):
+                all_active.append(event)
+                if self._event_active_since[event] is None and now is not None:
+                    self._event_active_since[event] = now
+            else:
+                self._event_active_since[event] = None
+
+        # Sort all_active by priority for consistent display
+        all_active.sort(key=lambda e: self._event_priority.index(e) if e in self._event_priority else 99)
+
+        # Sync legacy drowsy timer
+        self._drowsy_active_since = self._event_active_since.get("drowsy")
+
+        if resolved_event:
+            return resolved_event, resolved_conf, all_active
 
         # ── Unknown / normal ──────────────────────────────────────────────
         self._update_drowsy_timing(is_drowsy=False, now=now)
 
         if self._no_presence_counter >= self._unknown_enter_frames:
-            return "unknown", 0.0
-        return "normal", 0.0
+            return "unknown", 0.0, []
+        return "normal", 0.0, []
+
+    def get_event_duration(self, event: str, now: float) -> float:
+        """Return how long the given event has been *continuously* active (seconds)."""
+        started_at = self._event_active_since.get(event)
+        if started_at is None:
+            return 0.0
+        return max(0.0, now - started_at)
 
     def get_drowsy_duration(self, now: float) -> float:
-        """Return how long the driver has been *continuously* drowsy (seconds).
-
-        Returns ``0.0`` if the driver is not currently drowsy.
-        """
-        if self._drowsy_active_since is None:
-            return 0.0
-        return max(0.0, now - self._drowsy_active_since)
+        """Return how long the driver has been *continuously* drowsy (seconds)."""
+        return self.get_event_duration("drowsy", now)
 
     @property
     def drowsy_escalated(self) -> bool:
@@ -432,6 +456,7 @@ class DriverEventClassifier:
             self._candidate_streaks[event] = 0
             self._release_streaks[event] = 0
             self._event_histories[event].clear()
+            self._event_active_since[event] = None
 
     # ------------------------------------------------------------------
     # Private: drowsy timing

@@ -58,8 +58,16 @@ def create_save_alert_function(alert_type: str) -> callable:
         repository = AlertRepositoryImpl(db)  # type: ignore[arg-type]
         handler = CreateAlertHandler(repository)
 
-        # Convert string alert_type to domain AlertType enum
-        domain_alert_type = AlertType(alert_type)
+        # Map lowercase event keys to uppercase AlertType enum values
+        alert_type_mapping = {
+            "sleeping": "SLEEPING",
+            "using_phone": "USING_PHONE", 
+            "distracted": "DISTRACTED",
+            "drowsy": "SLEEPING",  # Map drowsy to SLEEPING for escalation
+        }
+        
+        mapped_alert_type = alert_type_mapping.get(alert_type, "SLEEPING")
+        domain_alert_type = AlertType(mapped_alert_type)
 
         alert = handler.handle(
             CreateAlertCommand(
@@ -181,6 +189,17 @@ class FrontendManager:
         for ws in self._connections:
             try:
                 await ws.send_text(message)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            self.disconnect(ws)
+
+    async def send_raw_frame(self, jpeg_bytes: bytes) -> None:
+        """Send raw JPEG frame to all connected frontend viewers."""
+        dead: list[WebSocket] = []
+        for ws in self._connections:
+            try:
+                await ws.send_bytes(jpeg_bytes)
             except Exception:
                 dead.append(ws)
         for ws in dead:
@@ -362,15 +381,62 @@ async def camera_websocket(websocket: WebSocket) -> None:
             # Process frame using the camera processor
             result = processor.process_frame(jpeg_bytes, frame_idx, now)
 
-            # ── Broadcast to frontend viewers ───────────────────────────
+            # ── Send raw frame with detection data to frontend viewers ─────────────────
+            await frontend_mgr.send_raw_frame(jpeg_bytes)
+            
+            # Also send frame metadata with detections for frontend visualization
+            if result.detections or result.event:
+                # Join all active events for the frontend display
+                display_event = result.event
+                if result.all_events and len(result.all_events) > 1:
+                    display_event = " + ".join(result.all_events)
+
+                # Construct event timing for the frontend
+                event_timing = None
+                if display_event and display_event != "normal" and display_event != "unknown":
+                    duration_sec = processor.event_logic.get_event_duration(result.event, now)
+                    event_timing = {
+                        "active": True,
+                        "event": display_event,
+                        "started_at": None, 
+                        "duration_ms": int(duration_sec * 1000),
+                        "confidence": result.confidence,
+                    }
+
+                frame_message = {
+                    "type": "frame",
+                    "frame_idx": frame_idx,
+                    "jpeg": None,  # Binary frame already sent separately
+                    "detections": result.detections,
+                    "event": display_event,
+                    "confidence": result.confidence,
+                    "event_timing": event_timing,
+                    "timestamp": now,
+                }
+                await frontend_mgr.broadcast(json.dumps(frame_message))
+
+            # ── Handle Evidence Persistence and Alert Broadcast ────────────────
+            if result.should_save_evidence and result.event:
+                pipeline = processor.pipelines.get(result.event)
+                if pipeline:
+                    logger.info("[AI] Triggering async persistence for %s", result.event)
+                    # Run persistence in background to not block the websocket loop
+                    asyncio.create_task(_persist_and_broadcast(pipeline, result.confidence))
+
+            # ── Broadcast real-time events (no evidence yet) ──────────────────
             if result.should_broadcast and result.event:
                 last_sent = last_alert_sent_at.get(result.event, 0.0)
                 if now - last_sent >= settings.DRIVER_EVENT_ALERT_COOLDOWN_SECONDS:
+                    # Join all events for the real-time alert too
+                    display_event = result.event
+                    if result.all_events and len(result.all_events) > 1:
+                        display_event = " + ".join(result.all_events)
+
                     await frontend_mgr.broadcast(
                         json.dumps(
                             {
                                 "type": "driver_event",
-                                "event": result.event,
+                                "event": display_event,
                                 "confidence": result.confidence,
                                 "drowsy_duration": processor.event_logic.get_drowsy_duration(
                                     now
@@ -380,9 +446,6 @@ async def camera_websocket(websocket: WebSocket) -> None:
                         )
                     )
                     last_alert_sent_at[result.event] = now
-
-            # ── Forward raw frame to frontend viewers ─────────────────────
-            await frontend_mgr.send_raw_frame(jpeg_bytes)
 
             # ── Periodic logging (every 10 seconds) ─────────────────────
             if now - t_last_log >= 10.0:
@@ -400,7 +463,7 @@ async def camera_websocket(websocket: WebSocket) -> None:
     finally:
         # Reset AI state on disconnect
         processor.reset()
-        await camera_mgr.disconnect(websocket)
+        camera_mgr.disconnect()
 
 
 # ── /ws/frontend endpoint ─────────────────────────────────────────────────────
@@ -411,18 +474,18 @@ async def frontend_websocket(websocket: WebSocket) -> None:
     """Browser viewers connect here to receive live frames and driver events."""
     await frontend_mgr.connect(websocket)
 
-    await websocket.send_text(
-        json.dumps(
-            {
-                "type": "pong",
-                "camera": camera_mgr.is_online,
-                "clients": frontend_mgr.client_count,
-                "device": camera_mgr.device_id,
-            }
-        )
-    )
-
     try:
+        await websocket.send_text(
+            json.dumps(
+                {
+                    "type": "pong",
+                    "camera": camera_mgr.is_online,
+                    "clients": frontend_mgr.client_count,
+                    "device": camera_mgr.device_id,
+                }
+            )
+        )
+
         while True:
             text = await websocket.receive_text()
             try:

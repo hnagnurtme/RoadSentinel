@@ -150,7 +150,7 @@ class FrameProcessingPipeline:
             return self._last_detections  # Use last known detections
 
         try:
-            detections = inference_engine(jpeg_bytes)
+            detections = inference_engine.run_inference(jpeg_bytes)
             self._last_detections = detections
             self._last_inference_frame = self._frame_idx
             return detections

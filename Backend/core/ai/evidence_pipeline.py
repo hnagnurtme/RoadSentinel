@@ -345,66 +345,6 @@ class DriverEvidencePipeline:
 
     # ------------------------------------------------------------------
     # Private: DB persistence
-
-    def _resolve_writer(
-        self, cv2: object, clip_path: pathlib.Path, width: int, height: int
-    ) -> tuple[Any | None, str | None]:
-        """Try configured codecs in order and return the first working writer."""
-        tried: list[str] = []
-        for codec in self._codec_candidates:
-            if len(codec) != 4:
-                continue
-            tried.append(codec)
-            writer = cv2.VideoWriter(  # type: ignore[attr-defined]
-                str(clip_path),
-                cv2.VideoWriter_fourcc(*codec),  # type: ignore[attr-defined]
-                float(self._fps),
-                (width, height),
-            )
-            if writer.isOpened():
-                return writer, codec
-            writer.release()
-
-        logger.warning(
-            "No evidence codec available from candidates: %s. Install/enable FFmpeg or switch codec list.",
-            ",".join(tried),
-        )
-        return None, None
-
-    # ------------------------------------------------------------------
-    # Private: Cloudinary upload
-    # ------------------------------------------------------------------
-
-    def _upload_cloudinary(
-        self, clip_path: pathlib.Path, confidence: float
-    ) -> str | None:
-        """Upload clip to Cloudinary and return the secure URL, or ``None``."""
-        if not self._cloudinary_ready:
-            return None
-        try:
-            import cloudinary.uploader  # type: ignore
-
-            public_id = f"{self._event_key}/{time.strftime('%Y-%m-%d')}/{uuid.uuid4()}"
-            result = cloudinary.uploader.upload(  # type: ignore
-                str(clip_path),
-                resource_type="video",
-                public_id=public_id,
-                folder=settings.DRIVER_EVENT_CLOUDINARY_FOLDER,
-                overwrite=False,
-                format="mp4",
-                context={
-                    "event": self._event_key,
-                    "confidence": f"{confidence:.4f}",
-                },
-            )
-            if isinstance(result, dict):
-                return result.get("secure_url")
-        except Exception as exc:
-            logger.error("Cloudinary upload failed: %s", exc, exc_info=True)
-        return None
-
-    # ------------------------------------------------------------------
-    # Private: DB persistence
     # ------------------------------------------------------------------
 
     def _persist_alert(

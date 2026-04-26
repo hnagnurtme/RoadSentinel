@@ -39,9 +39,19 @@ logger = logging.getLogger("roadsentinel.main")
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ARG001
     """Load the AI model at startup (non-blocking)."""
+    print("=== LIFESPAN STARTING - NEW CODE LOADED ===")
     logger.info("Starting up RoadSentinel backend...")
-    await asyncio.to_thread(inference_engine.load)
+    logger.info("About to load AI model...")
+    try:
+        await asyncio.to_thread(inference_engine.load)
+        logger.info("AI model loading completed.")
+        logger.info(f"AI engine ready: {inference_engine.is_ready}")
+        print(f"=== AI ENGINE READY: {inference_engine.is_ready} ===")
+    except Exception as e:
+        logger.error(f"AI model loading failed: {e}")
+        print(f"=== AI MODEL LOADING FAILED: {e} ===")
     logger.info("Startup complete.")
+    print("=== STARTUP COMPLETE ===")
     yield
     logger.info("Shutting down RoadSentinel backend.")
 

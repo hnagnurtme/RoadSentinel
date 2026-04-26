@@ -6,60 +6,13 @@ Handler for listing alerts with pre-joined user and vehicle data using AlertOver
 
 from __future__ import annotations
 
-import uuid
-from typing import Any, NamedTuple
+from typing import Any
 
 from application.alert.queries.list_alerts_overview import ListAlertsOverviewQuery
 from infrastructure.db.session import SessionLocal
+from sqlalchemy import text
 
 
-class AlertOverviewRow(NamedTuple):
-    """Raw row from AlertOverviewView."""
-
-    _id: uuid.UUID
-    message: str
-    alert_type: str
-    evidence_url: str | None
-    device_id: uuid.UUID
-    driver_id: uuid.UUID | None
-    vehicle_id: uuid.UUID | None
-    latitude: float | None
-    longitude: float | None
-    # User fields
-    user__id: uuid.UUID | None
-    user__email: str | None
-    user__name: str | None
-    user__avatar_image_url: str | None
-    user__name__family: str | None
-    user__name__given: str | None
-    user__name__middle: str | None
-    user__name__prefix: str | None
-    user__name__suffix: str | None
-    user__birthday: str | None
-    user__gender: str | None
-    user__address__city: str | None
-    user__address__country: str | None
-    user__address__line1: str | None
-    user__address__line2: str | None
-    user___created_at: str | None
-    user___updated_at: str | None
-    user___deleted_at: str | None
-    # Vehicle fields
-    vehicle__id: uuid.UUID | None
-    vehicle__plate_number: str | None
-    vehicle__manufacturer: str | None
-    vehicle__model: str | None
-    vehicle__vehicle_image_url: str | None
-    vehicle__color: str | None
-    vehicle__production_year: int | None
-    vehicle__vin: str | None
-    vehicle___created_at: str | None
-    vehicle___updated_at: str | None
-    vehicle___deleted_at: str | None
-    message_length: int
-    _created_at: str
-    _updated_at: str
-    _deleted_at: str | None
 
 
 class ListAlertsOverviewHandler:
@@ -87,12 +40,13 @@ class ListAlertsOverviewHandler:
             params["limit"] = limit
 
             # Execute query
-            result = db.execute(sql, params)
+            result = db.execute(text(sql), params)
             rows = result.fetchall()
 
             # Convert rows to dictionaries with proper nested structure
             alerts = []
             for row in rows:
+                # Access row data using attribute-style access
                 alert_dict = {
                     "_id": str(row._id),
                     "message": row.message,
@@ -110,44 +64,46 @@ class ListAlertsOverviewHandler:
                 }
 
                 # Add user data if present
-                if row.user__id is not None:
+                user_id = getattr(row, 'user__id', None)
+                if user_id is not None:
                     alert_dict["user"] = {
-                        "_id": str(row.user__id),
-                        "email": row.user__email,
-                        "name": row.user__name,
-                        "avatar_image_url": row.user__avatar_image_url,
-                        "name__family": row.user__name__family,
-                        "name__given": row.user__name__given,
-                        "name__middle": row.user__name__middle,
-                        "name__prefix": row.user__name__prefix,
-                        "name__suffix": row.user__name__suffix,
-                        "birthday": row.user__birthday,
-                        "gender": row.user__gender,
-                        "address__city": row.user__address__city,
-                        "address__country": row.user__address__country,
-                        "address__line1": row.user__address__line1,
-                        "address__line2": row.user__address__line2,
-                        "_created_at": row.user___created_at,
-                        "_updated_at": row.user___updated_at,
-                        "_deleted_at": row.user___deleted_at,
+                        "_id": str(user_id),
+                        "email": getattr(row, 'user__email', None),
+                        "name": getattr(row, 'user__name', None),
+                        "avatar_image_url": getattr(row, 'user__avatar_image_url', None),
+                        "name__family": getattr(row, 'user__name__family', None),
+                        "name__given": getattr(row, 'user__name__given', None),
+                        "name__middle": getattr(row, 'user__name__middle', None),
+                        "name__prefix": getattr(row, 'user__name__prefix', None),
+                        "name__suffix": getattr(row, 'user__name__suffix', None),
+                        "birthday": getattr(row, 'user__birthday', None),
+                        "gender": getattr(row, 'user__gender', None),
+                        "address__city": getattr(row, 'user__address__city', None),
+                        "address__country": getattr(row, 'user__address__country', None),
+                        "address__line1": getattr(row, 'user__address__line1', None),
+                        "address__line2": getattr(row, 'user__address__line2', None),
+                        "_created_at": getattr(row, 'user__created_at', None),
+                        "_updated_at": getattr(row, 'user__updated_at', None),
+                        "_deleted_at": getattr(row, 'user__deleted_at', None),
                     }
                 else:
                     alert_dict["user"] = None
 
                 # Add vehicle data if present
-                if row.vehicle__id is not None:
+                vehicle_id = getattr(row, 'vehicle__id', None)
+                if vehicle_id is not None:
                     alert_dict["vehicle"] = {
-                        "_id": str(row.vehicle__id),
-                        "plate_number": row.vehicle__plate_number,
-                        "manufacturer": row.vehicle__manufacturer,
-                        "model": row.vehicle__model,
-                        "vehicle_image_url": row.vehicle__vehicle_image_url,
-                        "color": row.vehicle__color,
-                        "production_year": row.vehicle__production_year,
-                        "vin": row.vehicle__vin,
-                        "_created_at": row.vehicle___created_at,
-                        "_updated_at": row.vehicle___updated_at,
-                        "_deleted_at": row.vehicle___deleted_at,
+                        "_id": str(vehicle_id),
+                        "plate_number": getattr(row, 'vehicle__plate_number', None),
+                        "manufacturer": getattr(row, 'vehicle__manufacturer', None),
+                        "model": getattr(row, 'vehicle__model', None),
+                        "vehicle_image_url": getattr(row, 'vehicle__vehicle_image_url', None),
+                        "color": getattr(row, 'vehicle__color', None),
+                        "production_year": getattr(row, 'vehicle__production_year', None),
+                        "vin": getattr(row, 'vehicle__vin', None),
+                        "_created_at": getattr(row, 'vehicle__created_at', None),
+                        "_updated_at": getattr(row, 'vehicle__updated_at', None),
+                        "_deleted_at": getattr(row, 'vehicle__deleted_at', None),
                     }
                 else:
                     alert_dict["vehicle"] = None

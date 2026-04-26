@@ -25,21 +25,23 @@ MODEL_PATH: Final[pathlib.Path] = (
 
 INFER_W: Final[int] = 320
 INFER_H: Final[int] = 240
-CONF_THRESH: Final[float] = 0.4
+CONF_THRESH: Final[float] = 0.2
 SKIP_FRAMES: Final[int] = 2  # run inference every N frames
+MAX_BATCH_SIZE: Final[int] = 4  # max frames to batch for inference
 
 #: Exact label strings output by the YOLO model (lowercased for matching).
-#: These were measured from the training set:
-#:   Distracted  12.4%  |  Drinking    2.2%  |  Eyes Closed  23.0%
-#:   Mobile      13.7%  |  Seat Belt  21.2%  |  Yawning      27.5%
+#: Actual model classes (7 total):
+#:   Drinking  |  Eyes Closed  |  Looking Away  |  Mobile
+#:   Reaching Behind  |  Seat Belt  |  Yawning
 RELEVANT_CLASSES: Final[frozenset[str]] = frozenset(
     {
-        "distracted",   # driver not looking at road
-        "drinking",     # consuming beverage while driving
-        "eyes closed",  # direct sleeping indicator
-        "mobile",       # phone in hand / at ear
-        "seat belt",    # safety-belt violation
-        "yawning",      # fatigue / drowsy indicator
+        "drinking",        # consuming beverage while driving → distracted
+        "eyes closed",     # direct sleeping indicator → sleeping
+        "looking away",    # gaze not on road → distracted
+        "mobile",          # phone in hand / at ear → using_phone
+        "reaching behind", # arm motion away from wheel → distracted
+        "seat belt",       # safety-belt violation → distracted
+        "yawning",         # fatigue / drowsy indicator → drowsy
     }
 )
 
@@ -80,21 +82,34 @@ class YOLOInferenceEngine:
         Calling ``load()`` when AI libs are unavailable or the model file is
         missing is a no-op (a warning is logged).
         """
+        logger.info("[AI] Starting model loading...")
+        logger.info(f"[AI] AI available: {_AI_AVAILABLE}")
+        logger.info(f"[AI] Model path: {MODEL_PATH}")
+        logger.info(f"[AI] Model exists: {MODEL_PATH.exists()}")
+        
         if not _AI_AVAILABLE:
+            logger.error("[AI] AI libraries not available - detection disabled")
             return
         if not MODEL_PATH.exists():
-            logger.warning("[AI] model not found at %s — detection disabled", MODEL_PATH)
+            logger.error("[AI] model not found at %s — detection disabled", MODEL_PATH)
             return
 
         from ultralytics import YOLO as _YOLO  # type: ignore
         import numpy as _np  # type: ignore
 
-        self._model = _YOLO(str(MODEL_PATH))
+        try:
+            logger.info("[AI] Loading YOLO model...")
+            self._model = _YOLO(str(MODEL_PATH))
+            logger.info("[AI] Model loaded successfully")
 
-        # Warmup — avoids latency spike on the first real frame.
-        dummy = _np.zeros((INFER_H, INFER_W, 3), dtype=_np.uint8)
-        self._model(dummy, verbose=False)  # type: ignore[operator]
-        logger.info("[AI] YOLO model loaded from %s", MODEL_PATH)
+            # Warmup — avoids latency spike on the first real frame.
+            logger.info("[AI] Running warmup...")
+            dummy = _np.zeros((INFER_H, INFER_W, 3), dtype=_np.uint8)
+            self._model(dummy, verbose=False)  # type: ignore[operator]
+            logger.info("[AI] Warmup completed - model ready for inference")
+        except Exception as e:
+            logger.error(f"[AI] Failed to load model: {e}")
+            self._model = None
 
     @property
     def is_ready(self) -> bool:
@@ -115,6 +130,7 @@ class YOLOInferenceEngine:
             undecodeable.
         """
         if not self.is_ready:
+            logger.warning("[AI] Model not ready for inference")
             return []
 
         import cv2 as _cv2  # type: ignore
@@ -123,25 +139,96 @@ class YOLOInferenceEngine:
         arr = _np.frombuffer(jpeg_bytes, dtype=_np.uint8)
         frame = _cv2.imdecode(arr, _cv2.IMREAD_COLOR)
         if frame is None:
+            logger.warning("[AI] Failed to decode JPEG frame")
             return []
 
         h, w = frame.shape[:2]
         small = _cv2.resize(frame, (INFER_W, INFER_H), interpolation=_cv2.INTER_LINEAR)
         sx, sy = w / float(INFER_W), h / float(INFER_H)
 
-        results = self._model(small, conf=CONF_THRESH, verbose=False)[0]  # type: ignore[index]
+        logger.debug(f"[AI] Running inference on {w}x{h} frame, conf_thresh={CONF_THRESH}")
 
-        detections: list[dict] = []
+        results = self._model(small, conf=CONF_THRESH, verbose=False)[0]  # type: ignore[index]
+        
+        detections = []
         for box in results.boxes:
             x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
-            detections.append(
-                {
-                    "label": self._model.names[int(box.cls[0])],  # type: ignore[index]
-                    "conf": round(float(box.conf[0]), 3),
-                    "bbox": [int(x1 * sx), int(y1 * sy), int(x2 * sx), int(y2 * sy)],
-                }
-            )
+            label = self._model.names[int(box.cls[0])]  # type: ignore[index]
+            conf = float(box.conf[0])
+            
+            logger.debug(f"[AI] Detection: {label} conf={conf:.3f} bbox=({x1},{y1},{x2},{y2})")
+            
+            detections.append({
+                "label": label,
+                "conf": round(conf, 3),
+                "bbox": [int(x1 * sx), int(y1 * sy), int(x2 * sx), int(y2 * sy)],
+            })
+        
+        logger.info(f"[AI] Found {len(detections)} detections")
         return detections
+
+    def run_batch_inference(self, jpeg_batch: list[bytes]) -> list[list[dict]]:
+        """Process multiple frames in batch for better GPU utilization.
+        
+        Args:
+            jpeg_batch: List of JPEG byte arrays to process
+            
+        Returns:
+            List of detection lists, one per input frame
+        """
+        if not self.is_ready or not jpeg_batch:
+            return [[] for _ in jpeg_batch]
+
+        import cv2 as _cv2  # type: ignore
+        import numpy as _np  # type: ignore
+
+        # Decode and resize all frames
+        frames = []
+        scales = []
+        
+        for jpeg_bytes in jpeg_batch:
+            arr = _np.frombuffer(jpeg_bytes, dtype=_np.uint8)
+            frame = _cv2.imdecode(arr, _cv2.IMREAD_COLOR)
+            if frame is None:
+                frames.append(None)
+                scales.append((1.0, 1.0))
+                continue
+                
+            h, w = frame.shape[:2]
+            small = _cv2.resize(frame, (INFER_W, INFER_H), interpolation=_cv2.INTER_LINEAR)
+            frames.append(small)
+            scales.append((w / float(INFER_W), h / float(INFER_H)))
+
+        # Batch inference
+        try:
+            batch_results = self._model(frames, conf=CONF_THRESH, verbose=False)  # type: ignore[operator]
+            
+            all_detections = []
+            for i, results in enumerate(batch_results):
+                if frames[i] is None:
+                    all_detections.append([])
+                    continue
+                    
+                sx, sy = scales[i]
+                detections = []
+                
+                for box in results.boxes:
+                    x1, y1, x2, y2 = map(int, box.xyxy[0].tolist())
+                    detections.append(
+                        {
+                            "label": self._model.names[int(box.cls[0])],  # type: ignore[index]
+                            "conf": round(float(box.conf[0]), 3),
+                            "bbox": [int(x1 * sx), int(y1 * sy), int(x2 * sx), int(y2 * sy)],
+                        }
+                    )
+                all_detections.append(detections)
+                
+            return all_detections
+            
+        except Exception as e:
+            logger.warning(f"Batch inference failed, falling back to individual: {e}")
+            # Fallback to individual processing
+            return [self.run_inference(jpeg) for jpeg in jpeg_batch]
 
 
 # ── Module-level singleton ────────────────────────────────────────────────────

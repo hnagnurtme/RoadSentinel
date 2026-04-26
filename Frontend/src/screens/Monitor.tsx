@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import React from "react";
 import {
   Wifi, WifiOff, Camera, CameraOff, RefreshCw,
   ZapOff, Zap, Activity, Users, AlertTriangle
@@ -108,6 +109,10 @@ function useCameraStream(deviceId: string) {
   const lastRenderedFrameRef = useRef(0);
   const totalFramesRef = useRef(0);
   const lastStatsUpdateRef = useRef(0);
+  
+  // Debouncing for detection events
+  const lastAlertProcessTime = useRef(0);
+  const alertProcessingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const connect = useCallback(() => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
@@ -126,6 +131,41 @@ function useCameraStream(deviceId: string) {
     };
 
     ws.onmessage = (evt) => {
+      console.log(`[DEBUG] WebSocket message type: ${typeof evt.data}, size: ${evt.data?.length || 'N/A'}`);
+      
+      // Handle binary JPEG frames directly
+      if (evt.data instanceof Blob) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = (reader.result as string).split(',')[1];
+          const newFrameIdx = (latestFrameRef.current?.frameIdx ?? 0) + 1;
+          
+          // Merge with current state to preserve detections/timing from JSON messages
+          latestFrameRef.current = {
+            frameIdx: newFrameIdx,
+            jpeg: base64,
+            detections: latestFrameRef.current?.detections ?? [],
+            eventTiming: latestFrameRef.current?.eventTiming ?? null,
+          };
+          totalFramesRef.current += 1;
+
+          // FPS calculation
+          const now = Date.now();
+          frameTimestamps.current.push(now);
+          const cutoff = now - 2000;
+          frameTimestamps.current = frameTimestamps.current.filter((t: number) => t >= cutoff);
+
+          if (now - lastStatsUpdateRef.current >= UI_STATS_INTERVAL_MS) {
+            lastStatsUpdateRef.current = now;
+            setFps(Math.round((frameTimestamps.current.length / 2) * 10) / 10);
+            setTotalFrames(totalFramesRef.current);
+          }
+        };
+        reader.readAsDataURL(evt.data);
+        return;
+      }
+
+      // Handle JSON messages
       let data: WsMessage;
       try {
         data = JSON.parse(evt.data as string);
@@ -135,11 +175,12 @@ function useCameraStream(deviceId: string) {
 
       if (data.type === "frame") {
         const frame = data as FrameMessage;
+        // Merge with current state to preserve jpeg from binary messages
         latestFrameRef.current = {
           frameIdx: frame.frame_idx,
-          jpeg: frame.jpeg,
-          detections: frame.detections ?? [],
-          eventTiming: frame.event_timing ?? null,
+          jpeg: frame.jpeg || latestFrameRef.current?.jpeg || "",
+          detections: frame.detections ?? latestFrameRef.current?.detections ?? [],
+          eventTiming: frame.event_timing ?? latestFrameRef.current?.eventTiming ?? null,
         };
         totalFramesRef.current += 1;
 
@@ -159,30 +200,61 @@ function useCameraStream(deviceId: string) {
         setCameraOnline(pong.camera);
         setViewers(pong.clients);
       } else if (data.type === "alert_created") {
-        const incoming = data as AlertCreatedMessage;
-        const createdAtMs = incoming.data._created_at
-          ? new Date(incoming.data._created_at).getTime()
-          : Date.now();
-        const confidenceMatch = incoming.data.message.match(/confidence=([0-9.]+)/i);
-        const parsedConfidence = confidenceMatch ? Number.parseFloat(confidenceMatch[1]) : 0;
-        const id = `${incoming.data._id ?? createdAtMs}-${Math.random().toString(16).slice(2, 8)}`;
-        const alertItem: LiveViolationAlert = {
-          id,
-          alertId: incoming.data._id,
-          event: incoming.data.alert_type,
-          confidence: Number.isFinite(parsedConfidence) ? parsedConfidence : 0,
-          timestamp: Number.isFinite(createdAtMs) ? createdAtMs : Date.now(),
-          frameIdx: 0,
-          message: incoming.data.message,
-          evidenceUrl: incoming.data.evidence_url,
-        };
-        setLiveAlerts((prev: LiveViolationAlert[]) => [alertItem, ...prev].slice(0, 4));
+        // Debounce rapid alert processing to prevent UI overload
+        const now = Date.now();
+        const timeSinceLastAlert = now - lastAlertProcessTime.current;
+        
+        // Clear any pending timeout
+        if (alertProcessingTimeout.current) {
+          clearTimeout(alertProcessingTimeout.current);
+        }
+        
+        // Process with debouncing - immediate for first alert, delayed for rapid ones
+        const processAlert = () => {
+          lastAlertProcessTime.current = Date.now();
+          
+          requestAnimationFrame(() => {
+            const incoming = data as AlertCreatedMessage;
+            const createdAtMs = incoming.data._created_at
+              ? new Date(incoming.data._created_at).getTime()
+              : Date.now();
+            const confidenceMatch = incoming.data.message.match(/confidence=([0-9.]+)/i);
+            const parsedConfidence = confidenceMatch ? Number.parseFloat(confidenceMatch[1]) : 0;
+            const id = `${incoming.data._id ?? createdAtMs}-${Math.random().toString(16).slice(2, 8)}`;
+            
+            console.log(`[DEBUG] Processing alert: ${incoming.data.alert_type} (debounced)`);
+            
+            const alertItem: LiveViolationAlert = {
+              id,
+              alertId: incoming.data._id,
+              event: incoming.data.alert_type,
+              confidence: Number.isFinite(parsedConfidence) ? parsedConfidence : 0,
+              timestamp: Number.isFinite(createdAtMs) ? createdAtMs : Date.now(),
+              frameIdx: 0,
+              message: incoming.data.message,
+              evidenceUrl: incoming.data.evidence_url,
+            };
+            
+            // Batch state update to prevent multiple re-renders
+            setLiveAlerts((prev: LiveViolationAlert[]) => {
+              const newAlerts = [alertItem, ...prev].slice(0, 4);
+              return newAlerts;
+            });
 
-        const timer = setTimeout(() => {
-          setLiveAlerts((prev: LiveViolationAlert[]) => prev.filter((item) => item.id !== id));
-          alertTimers.current.delete(id);
-        }, 12000);
-        alertTimers.current.set(id, timer);
+            const timer = setTimeout(() => {
+              setLiveAlerts((prev: LiveViolationAlert[]) => prev.filter((item) => item.id !== id));
+              alertTimers.current.delete(id);
+            }, 12000);
+            alertTimers.current.set(id, timer);
+          });
+        };
+        
+        // If rapid alerts (> 2 per second), debounce with 100ms delay
+        if (timeSinceLastAlert < 500) {
+          alertProcessingTimeout.current = setTimeout(processAlert, 100);
+        } else {
+          processAlert(); // Process immediately for spaced alerts
+        }
       } else if (data.type === "camera_offline") {
         setCameraOnline(false);
         setEventTiming(null);
@@ -206,6 +278,7 @@ function useCameraStream(deviceId: string) {
     return () => {
       if (pingTimer.current) clearInterval(pingTimer.current);
       if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
+      if (alertProcessingTimeout.current) clearTimeout(alertProcessingTimeout.current);
       for (const timer of alertTimers.current.values()) {
         clearTimeout(timer);
       }
@@ -215,24 +288,45 @@ function useCameraStream(deviceId: string) {
   }, [connect]);
 
   useEffect(() => {
-    const frameTimer = window.setInterval(() => {
+    let animationFrameId: number;
+    let lastRenderTime = 0;
+    const TARGET_INTERVAL = 1000 / 15; // 15 FPS target for UI
+
+    const render = (timestamp: number) => {
       const latest = latestFrameRef.current;
       if (!latest) {
+        animationFrameId = requestAnimationFrame(render);
         return;
+      }
+
+      // Debug logging
+      if (latest.frameIdx % 10 === 0) {
+        console.log(`[DEBUG] Frame ${latest.frameIdx}, lastRendered: ${lastRenderedFrameRef.current}`);
       }
 
       if (latest.frameIdx === lastRenderedFrameRef.current) {
+        animationFrameId = requestAnimationFrame(render);
         return;
       }
 
-      lastRenderedFrameRef.current = latest.frameIdx;
-      setLastJpeg(latest.jpeg);
-      setDetections(latest.detections);
-      setEventTiming(latest.eventTiming);
-    }, UI_FRAME_INTERVAL_MS);
+      // Throttle rendering to target FPS
+      if (timestamp - lastRenderTime >= TARGET_INTERVAL) {
+        lastRenderedFrameRef.current = latest.frameIdx;
+        setLastJpeg(latest.jpeg);
+        setDetections(latest.detections);
+        setEventTiming(latest.eventTiming);
+        lastRenderTime = timestamp;
+        
+        console.log(`[DEBUG] Rendered frame ${latest.frameIdx}`);
+      }
+
+      animationFrameId = requestAnimationFrame(render);
+    };
+
+    animationFrameId = requestAnimationFrame(render);
 
     return () => {
-      window.clearInterval(frameTimer);
+      cancelAnimationFrame(animationFrameId);
     };
   }, []);
 
@@ -310,6 +404,7 @@ function LiveCanvas({ jpeg, detections, cameraOnline, isConnected }: LiveCanvasP
   const pendingRef = useRef<string | null>(null);
   const decodingRef = useRef(false);
   const detectionsRef = useRef<Detection[]>([]);
+  const offscreenCanvasRef = useRef<OffscreenCanvas | null>(null);
 
   // Keep latest detections in a ref so the draw callback always has them
   useEffect(() => { detectionsRef.current = detections; }, [detections]);
@@ -361,6 +456,11 @@ function LiveCanvas({ jpeg, detections, cameraOnline, isConnected }: LiveCanvasP
     const frameCanvas = frameCanvasRef.current;
     if (!frameCanvas) return;
 
+    // Initialize offscreen canvas for better performance
+    if (!offscreenCanvasRef.current && typeof OffscreenCanvas !== 'undefined') {
+      offscreenCanvasRef.current = new OffscreenCanvas(320, 240);
+    }
+
     pendingRef.current = jpeg;
 
     const process = () => {
@@ -369,29 +469,59 @@ function LiveCanvas({ jpeg, detections, cameraOnline, isConnected }: LiveCanvasP
       const src = `data:image/jpeg;base64,${pendingRef.current}`;
       pendingRef.current = null;
 
+      console.log(`[DEBUG] Processing new frame, size: ${src.length}`);
+
       img.onload = () => {
-        if (frameCanvas.width !== img.width || frameCanvas.height !== img.height) {
-          frameCanvas.width = img.width;
-          frameCanvas.height = img.height;
+        console.log(`[DEBUG] Image loaded, size: ${img.width}x${img.height}`);
+        
+        // Use offscreen canvas if available for better performance
+        const targetCanvas = offscreenCanvasRef.current || frameCanvas;
+        
+        if (targetCanvas.width !== img.width || targetCanvas.height !== img.height) {
+          targetCanvas.width = img.width;
+          targetCanvas.height = img.height;
+          if (frameCanvas.width !== img.width || frameCanvas.height !== img.height) {
+            frameCanvas.width = img.width;
+            frameCanvas.height = img.height;
+          }
         }
 
-        const ctx = frameCanvas.getContext("2d");
+        const ctx = targetCanvas.getContext("2d");
         if (ctx) {
-          ctx.clearRect(0, 0, frameCanvas.width, frameCanvas.height);
+          ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
           ctx.drawImage(img, 0, 0);
+        }
+
+        // If using offscreen canvas, copy to main canvas
+        if (offscreenCanvasRef.current && frameCanvas) {
+          const mainCtx = frameCanvas.getContext("2d");
+          if (mainCtx) {
+            mainCtx.clearRect(0, 0, frameCanvas.width, frameCanvas.height);
+            mainCtx.drawImage(offscreenCanvasRef.current, 0, 0);
+          }
         }
 
         drawAnnotations();
         decodingRef.current = false;
-        if (pendingRef.current) process();
+        
+        console.log(`[DEBUG] Frame rendered to canvas`);
+        
+        // Process next frame if pending
+        if (pendingRef.current) {
+          requestAnimationFrame(process);
+        }
       };
+      
       img.onerror = () => {
+        console.error(`[DEBUG] Image load failed`);
         decodingRef.current = false;
       };
-      img.src = src;
+      
+      // Disable caching by adding timestamp
+      img.src = src + `#${Date.now()}`;
     };
 
-    process();
+    requestAnimationFrame(process);
   }, [jpeg, drawAnnotations]);
 
   return (
@@ -498,36 +628,44 @@ export function Monitor({ deviceId }: MonitorProps) {
     }
     lastAlertIdRef.current = newest.id;
 
-    try {
-      const AudioContextCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-      if (!AudioContextCtor) {
-        return;
-      }
+    // Process audio asynchronously to prevent UI blocking
+    setTimeout(() => {
+      try {
+        console.log(`[DEBUG] Playing audio for alert: ${newest.event}`);
+        
+        const AudioContextCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!AudioContextCtor) {
+          return;
+        }
 
-      if (!audioContextRef.current) {
-        audioContextRef.current = new AudioContextCtor();
-      }
-      const ctx = audioContextRef.current;
-      if (ctx.state === "suspended") {
-        void ctx.resume();
-      }
+        if (!audioContextRef.current) {
+          audioContextRef.current = new AudioContextCtor();
+        }
+        const ctx = audioContextRef.current;
+        if (ctx.state === "suspended") {
+          void ctx.resume();
+        }
 
-      const t0 = ctx.currentTime;
-      const oscillator = ctx.createOscillator();
-      const gainNode = ctx.createGain();
-      oscillator.type = "triangle";
-      oscillator.frequency.setValueAtTime(980, t0);
-      oscillator.frequency.exponentialRampToValueAtTime(740, t0 + 0.18);
-      gainNode.gain.setValueAtTime(0.0001, t0);
-      gainNode.gain.exponentialRampToValueAtTime(0.09, t0 + 0.03);
-      gainNode.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
-      oscillator.connect(gainNode);
-      gainNode.connect(ctx.destination);
-      oscillator.start(t0);
-      oscillator.stop(t0 + 0.24);
-    } catch {
-      // Ignore autoplay/device audio errors.
-    }
+        const t0 = ctx.currentTime;
+        const oscillator = ctx.createOscillator();
+        const gainNode = ctx.createGain();
+        oscillator.type = "triangle";
+        oscillator.frequency.setValueAtTime(980, t0);
+        oscillator.frequency.exponentialRampToValueAtTime(740, t0 + 0.18);
+        gainNode.gain.setValueAtTime(0.0001, t0);
+        gainNode.gain.exponentialRampToValueAtTime(0.09, t0 + 0.03);
+        gainNode.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
+        oscillator.connect(gainNode);
+        gainNode.connect(ctx.destination);
+        oscillator.start(t0);
+        oscillator.stop(t0 + 0.24);
+        
+        console.log(`[DEBUG] Audio alert played successfully`);
+      } catch (error) {
+        console.log(`[DEBUG] Audio alert failed:`, error);
+        // Ignore autoplay/device audio errors.
+      }
+    }, 0); // Push to next event loop
   }, [liveAlerts]);
 
   useEffect(() => {
@@ -538,56 +676,62 @@ export function Monitor({ deviceId }: MonitorProps) {
     };
   }, []);
 
-  const formatEvent = (event: string): string =>
-    event
+  // Memoize event formatting to prevent unnecessary recalculations
+  const formatEvent = useCallback((event: string): string => {
+    return event
       .split("_")
       .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
       .join(" ");
+  }, []);
 
-  const openAlertDetail = (alertId: string) => {
-    window.open(`${window.location.origin}/alerts/${alertId}`, "_blank", "noopener,noreferrer");
-  };
+  // Memoize alert item component to prevent unnecessary re-renders
+  const AlertItem = React.memo(({ alert }: { alert: LiveViolationAlert }) => {
+    const handleClick = useCallback(() => {
+      if (alert.alertId) {
+        window.open(`${window.location.origin}/alerts/${alert.alertId}`, "_blank", "noopener,noreferrer");
+      }
+    }, [alert.alertId]);
+
+    return (
+      <div className="pointer-events-auto rounded-xl border border-red-500/25 bg-red-50/95 shadow-xl backdrop-blur px-3 py-2.5 animate-in slide-in-from-right-8 fade-in duration-300">
+        <div className="flex items-start gap-2.5">
+          <div className="mt-0.5 rounded-lg bg-red-100 p-1.5">
+            <AlertTriangle className="w-4 h-4 text-red-700" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-black uppercase tracking-wider text-red-700">New Violation</p>
+            <p className="text-sm font-bold text-red-900 truncate">{formatEvent(alert.event)}</p>
+            <p className="text-[11px] text-red-800/80 mt-0.5">
+              {alert.message}
+            </p>
+            <div className="mt-2 flex justify-end">
+              <button
+                type="button"
+                disabled={!alert.alertId}
+                onClick={handleClick}
+                className={cn(
+                  "text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded transition-colors",
+                  alert.alertId
+                    ? "bg-red-700 text-white hover:bg-red-800"
+                    : "bg-red-100 text-red-400 cursor-not-allowed"
+                )}
+              >
+                View
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  });
+
+  AlertItem.displayName = "AlertItem";
 
   return (
     <div className="p-8 flex flex-col gap-6 max-w-[1600px] min-h-screen">
       <div className="fixed right-6 top-24 z-40 w-[320px] pointer-events-none space-y-2">
         {liveAlerts.map((alert: LiveViolationAlert) => (
-          <div
-            key={alert.id}
-            className="pointer-events-auto rounded-xl border border-red-500/25 bg-red-50/95 shadow-xl backdrop-blur px-3 py-2.5 animate-in slide-in-from-right-8 fade-in duration-300"
-          >
-            <div className="flex items-start gap-2.5">
-              <div className="mt-0.5 rounded-lg bg-red-100 p-1.5">
-                <AlertTriangle className="w-4 h-4 text-red-700" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-black uppercase tracking-wider text-red-700">New Violation</p>
-                <p className="text-sm font-bold text-red-900 truncate">{formatEvent(alert.event)}</p>
-                <p className="text-[11px] text-red-800/80 mt-0.5">
-                  {alert.message}
-                </p>
-                <div className="mt-2 flex justify-end">
-                  <button
-                    type="button"
-                    disabled={!alert.alertId}
-                    onClick={() => {
-                      if (alert.alertId) {
-                        openAlertDetail(alert.alertId);
-                      }
-                    }}
-                    className={cn(
-                      "text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded transition-colors",
-                      alert.alertId
-                        ? "bg-red-700 text-white hover:bg-red-800"
-                        : "bg-red-100 text-red-400 cursor-not-allowed"
-                    )}
-                  >
-                    View
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+          <AlertItem key={alert.id} alert={alert} />
         ))}
       </div>
 
