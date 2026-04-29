@@ -5,13 +5,41 @@ __pycache__/
 *.db
 *.sqlite
 *.sqlite3
+
+# Secrets
 .env
+.env.*
+!.env.example
+
+# Dev tools
 .venv/
 .pytest_cache/
 .mypy_cache/
+.ruff_cache/
 .coverage
 htmlcov/
-.git
+.vscode/
+
+# Git
+.git/
 .gitignore
+.gitattributes
+
+# Docs
 README.md
+README.md2
+*.md
+
+# Evidence clips (large, managed at runtime)
+evidence/
+
+# Alembic cache
 alembic/versions/__pycache__/
+
+# CI/CD
+.github/
+
+# Local model files (mounted at runtime, not baked into image)
+*.pt
+*.onnx
+*.engine

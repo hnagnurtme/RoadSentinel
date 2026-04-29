@@ -21,6 +21,8 @@ jobs:
       app-name: ${{ needs.prepare.outputs['app-name'] }}
       dockerfile: 'Backend/Dockerfile'
       context: 'Backend'
+      build-args: |
+        WITH_AI=false
 
   setup-vps:
     needs: [prepare]
