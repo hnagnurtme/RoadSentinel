@@ -48,7 +48,6 @@ jobs:
     with:
       app-name: ${{ needs.prepare.outputs['app-name'] }}
       image-tag: 'full'
-      health-check-path: '/'
       compose-file: 'Devops/Backend/docker-compose.prod.yml'
     secrets:
       SERVER_IP: ${{ secrets.SERVER_IP }}
