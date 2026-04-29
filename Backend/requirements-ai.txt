@@ -1,7 +1,7 @@
 # AI/CV additions — only needed when WITH_AI=true (~2.5 GB extra)
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.5.1+cpu
-torchvision==0.20.1+cpu
+torch==2.7.1+cpu
+torchvision==0.22.1+cpu
 ultralytics>=8.0.0
 numpy>=1.24.0
 opencv-python-headless>=4.8.0

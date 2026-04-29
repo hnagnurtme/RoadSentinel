@@ -14,15 +14,6 @@ jobs:
     secrets:
       ENV_FILE_CONTENT: ${{ secrets.ENV_FILE_CONTENT }}
 
-  build:
-    needs: [prepare]
-    uses: shipyard-io/templates/.github/workflows/reusable-build-docker.yml@main
-    with:
-      app-name: ${{ needs.prepare.outputs['app-name'] }}
-      dockerfile: 'Backend/Dockerfile'
-      context: 'Backend'
-      build-args: |
-        WITH_AI=false
 
   setup-vps:
     needs: [prepare]
@@ -51,12 +42,12 @@ jobs:
       TRAEFIK_DASHBOARD_AUTH: ${{ secrets.TRAEFIK_DASHBOARD_AUTH }}
 
   deploy:
-    needs: [prepare, build, setup-traefik]
-    if: always() && needs.build.result == 'success' && (needs.setup-traefik.result == 'success' || needs.setup-traefik.result == 'skipped')
+    needs: [prepare, setup-traefik]
+    if: always() && (needs.setup-traefik.result == 'success' || needs.setup-traefik.result == 'skipped')
     uses: shipyard-io/templates/.github/workflows/reusable-deploy-ssh.yml@main
     with:
       app-name: ${{ needs.prepare.outputs['app-name'] }}
-      image-tag: ${{ needs.build.outputs['image-tag'] }}
+      image-tag: 'full'
       health-check-path: '/'
       compose-file: 'Devops/Backend/docker-compose.prod.yml'
     secrets:
@@ -66,7 +57,7 @@ jobs:
       ENV_FILE_CONTENT: ${{ secrets.ENV_FILE_CONTENT }}
 
   notify:
-    needs: [prepare, build, deploy]
+    needs: [prepare, deploy]
     if: always()
     uses: shipyard-io/templates/.github/workflows/reusable-notify.yml@main
     with:
