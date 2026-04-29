@@ -1,18 +1,4 @@
-"""
-core/ai/evidence_pipeline.py
------------------------------
-Evidence clip recording and alert persistence pipeline.
-
-Key design decisions vs. the original implementation
------------------------------------------------------
-- **No direct `SessionLocal()` usage**: the pipeline receives a
-  ``session_factory`` callable so it stays decoupled from the infrastructure
-  layer and is independently testable.
-- The Cloudinary configuration is deferred to ``_configure_cloudinary()``
-  which is called exactly once during ``__init__``.
-- Clip encoding and cloud upload are pure helper methods that can be tested
-  or mocked independently.
-"""
+"""Evidence clip recording and alert persistence."""
 
 from __future__ import annotations
 
@@ -42,22 +28,9 @@ class EvidenceFramePacket(TypedDict):
     confidence: float
 
 
-# ── Evidence Pipeline ─────────────────────────────────────────────────────────
-
-
 class DriverEvidencePipeline:
-    """Records annotated JPEG frames, encodes a clip, optionally uploads it to
-    Cloudinary, and persists an alert record via a provided factory callable.
+    """Records frames, encodes clips, and persists alerts."""
 
-    Args:
-        event_key: Short identifier used in filenames/logs (e.g. ``"sleeping"``).
-        alert_type: The domain-level ``AlertType`` value for this event.
-        session_factory: Zero-arg callable that returns an open SQLAlchemy
-            ``Session``.  Injected so the pipeline does not import or create
-            sessions directly.
-    """
-
-    #: Human-readable alert messages keyed by event type.
     _MESSAGES: dict[str, str] = {
         "sleeping": "Driver sleeping detected",
         "using_phone": "Driver using phone while driving",
@@ -98,10 +71,6 @@ class DriverEvidencePipeline:
         EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
         self._configure_cloudinary()
 
-    # ------------------------------------------------------------------
-    # Frame buffer management
-    # ------------------------------------------------------------------
-
     def push_frame(
         self,
         jpeg_bytes: bytes,
@@ -111,11 +80,6 @@ class DriverEvidencePipeline:
         duration_ms: int = 0,
         confidence: float = 0.0,
     ) -> None:
-        """Append a frame to the rolling evidence buffer.
-
-        The hot streaming path can pass raw JPEG bytes only. When metadata is
-        provided, clip encoding will add overlays (bbox + event banner).
-        """
         if self._enabled:
             self._buffer.append(
                 {
@@ -128,21 +92,9 @@ class DriverEvidencePipeline:
             )
 
     def reset_buffer(self) -> None:
-        """Clear the evidence buffer (called when an event starts or ends)."""
         self._buffer.clear()
 
-    # ------------------------------------------------------------------
-    # Alert persistence
-    # ------------------------------------------------------------------
-
     def save_event_alert(self, confidence: float) -> dict | None:
-        """Encode the buffered frames into a clip, upload if configured, and
-        persist an alert record.
-
-        Returns:
-            A plain ``dict`` representation of the saved alert, or ``None``
-            on failure or when evidence recording is disabled.
-        """
         if not self._enabled:
             return None
 
@@ -150,7 +102,6 @@ class DriverEvidencePipeline:
         if not packets:
             return None
 
-        # Encode clip from buffered JPEG frames.
         clip_path = self._encode_clip(packets)
         evidence_url: str | None = None
         if clip_path is not None:
@@ -189,10 +140,6 @@ class DriverEvidencePipeline:
         finally:
             db.close()
 
-    # ------------------------------------------------------------------
-    # Private: Cloudinary setup
-    # ------------------------------------------------------------------
-
     def _configure_cloudinary(self) -> None:
         if not settings.DRIVER_EVENT_CLOUDINARY_ENABLED:
             return
@@ -212,18 +159,7 @@ class DriverEvidencePipeline:
         except Exception as exc:
             logger.error("Failed to configure Cloudinary: %s", exc)
 
-    # ------------------------------------------------------------------
-    # Private: video encoding
-    # ------------------------------------------------------------------
-
     def _encode_clip(self, packets: list[EvidenceFramePacket]) -> pathlib.Path | None:
-        """Encode buffered frames into an MP4 clip.
-
-        Each frame is annotated lazily at save-time so the real-time websocket
-        loop is not blocked by cv2 drawing work.
-
-        Returns the path to the written file, or ``None`` on failure.
-        """
         if not packets:
             return None
 
@@ -357,9 +293,6 @@ class DriverEvidencePipeline:
             return None
 
         return self._save_alert(db, message, evidence_url)
-
-
-# ── Factory helper ────────────────────────────────────────────────────────────
 
 
 def build_evidence_pipelines(

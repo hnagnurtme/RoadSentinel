@@ -11,7 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 try:
     import yaml
-except ImportError:  # pragma: no cover - optional runtime dependency
+except ImportError:  
     yaml = None
 
 load_dotenv()
@@ -185,6 +185,16 @@ class Settings(BaseSettings):
     DRIVER_EVENT_CLOUDINARY_API_KEY: str = ""
     DRIVER_EVENT_CLOUDINARY_API_SECRET: str = ""
     DRIVER_EVENT_CLOUDINARY_FOLDER: str = "roadsentinel/backend"
+
+    DRIVER_EVENT_FALLBACK_DEVICE_ID: uuid.UUID = uuid.UUID(
+        "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+    )
+    DRIVER_EVENT_FALLBACK_DRIVER_ID: uuid.UUID | None = uuid.UUID(
+        "1edc79dd-1331-454e-b64d-12fb8e77f464"
+    )
+    DRIVER_EVENT_FALLBACK_VEHICLE_ID: uuid.UUID | None = uuid.UUID(
+        "0e225dd7-deba-4cfa-91ef-dfa30a3942d1"
+    )
 
     DRIVER_EVENT_ALERT_DEVICE_ID: uuid.UUID = uuid.UUID(
         "3fa85f64-5717-4562-b3fc-2c963f66afa6"

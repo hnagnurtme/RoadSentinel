@@ -1,14 +1,4 @@
-"""
-interfaces/api/v1/alert.py
----------------------------
-REST endpoints for the ``Alert`` resource.
-
-Endpoints:
-  POST   /alerts          — create a new alert
-  GET    /alerts          — list alerts (paginated)
-  GET    /alerts/{id}     — get a single alert
-  DELETE /alerts/{id}     — soft-delete an alert
-"""
+"""REST endpoints for the Alert resource."""
 
 from __future__ import annotations
 
@@ -48,21 +38,11 @@ from interfaces.api.v1.websocket import alerts_ws_manager
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
 
-# ── Relation resolver ─────────────────────────────────────────────────────────
-
-
 def _resolve_alert_relations(
     alert,
     user_repository: UserRepositoryImpl,
     vehicle_repository: VehicleRepositoryImpl,
 ):
-    """Fetch and map the optional driver and vehicle relations for an alert.
-
-    .. todo::
-        The current implementation issues up to 2 extra DB queries per alert
-        which causes N+1 queries in ``list_alerts``.  This should be replaced
-        with a JOIN query or a batch-fetch in the repository layer.
-    """
     user = None
     vehicle = None
 
@@ -77,9 +57,6 @@ def _resolve_alert_relations(
             vehicle = to_vehicle_response(vehicle_entity)
 
     return user, vehicle
-
-
-# ── Endpoints ─────────────────────────────────────────────────────────────────
 
 
 @router.post("")

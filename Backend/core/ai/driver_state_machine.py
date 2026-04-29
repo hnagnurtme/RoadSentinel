@@ -10,21 +10,23 @@ deterministic conflict resolution.
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional, Dict, List
+from typing import Dict, List, Optional
 
 
 class DriverSafetyState(str, Enum):
     """Driver safety levels representing immediate physical danger."""
-    UNKNOWN   = "UNKNOWN"
-    NORMAL    = "NORMAL"
-    DROWSY    = "DROWSY"
+
+    UNKNOWN = "UNKNOWN"
+    NORMAL = "NORMAL"
+    DROWSY = "DROWSY"
     DANGEROUS = "DANGEROUS"
-    CRITICAL  = "CRITICAL"
+    CRITICAL = "CRITICAL"
 
 
 @dataclass
 class ActiveEvent:
     """An event that is currently active with duration tracking."""
+
     name: str
     score: float
     started_at: float
@@ -34,50 +36,55 @@ class ActiveEvent:
 @dataclass
 class DriverStateSnapshot:
     """Output of the state machine for one tick. Immutable after creation."""
+
     state: DriverSafetyState
-    dominant_event: str          # e.g. "sleeping", "using_phone"
-    dominant_score: float        # 0.0–1.0
+    dominant_event: str  # e.g. "sleeping", "using_phone"
+    dominant_score: float  # 0.0–1.0
     active_events: List[ActiveEvent]
     state_duration_seconds: float
     drowsy_duration_seconds: float
-    escalated: bool              # True when DROWSY has lasted >= escalation threshold
+    escalated: bool  # True when DROWSY has lasted >= escalation threshold
     now: float
 
 
 @dataclass
 class StateMachineConfig:
     """Configuration for driver state machine."""
+
     unknown_enter_seconds: float = 5.0
-    exit_hold_seconds: float = 3.0          # prevent rapid state drops
-    priority_order: List[str] = field(default_factory=lambda: ["sleeping", "using_phone", "distracted", "drowsy"])
-    event_enter_thresholds: Dict[str, float] = field(default_factory=lambda: {
-        "sleeping": 0.55,
-        "drowsy": 0.50,
-        "using_phone": 0.52,
-        "distracted": 0.48,
-    })
-    event_exit_thresholds: Dict[str, float] = field(default_factory=lambda: {
-        "sleeping": 0.30,
-        "drowsy": 0.28,
-        "using_phone": 0.30,
-        "distracted": 0.25,
-    })
+    exit_hold_seconds: float = 3.0  # prevent rapid state drops
+    priority_order: List[str] = field(
+        default_factory=lambda: ["sleeping", "using_phone", "distracted", "drowsy"]
+    )
+    event_enter_thresholds: Dict[str, float] = field(
+        default_factory=lambda: {
+            "sleeping": 0.55,
+            "drowsy": 0.50,
+            "using_phone": 0.52,
+            "distracted": 0.48,
+        }
+    )
+    event_exit_thresholds: Dict[str, float] = field(
+        default_factory=lambda: {
+            "sleeping": 0.30,
+            "drowsy": 0.28,
+            "using_phone": 0.30,
+            "distracted": 0.25,
+        }
+    )
     # Seconds in DANGEROUS state before escalating to CRITICAL
-    critical_duration_seconds: Dict[str, float] = field(default_factory=lambda: {
-        "sleeping": 5.0,    # 5 seconds sleeping = CRITICAL immediately
-        "using_phone": 10.0,
-        "distracted": 20.0,
-    })
-    drowsy_escalation_seconds: float = 30.0  # drowsy for 30s → DANGEROUS
+    critical_duration_seconds: Dict[str, float] = field(
+        default_factory=lambda: {
+            "sleeping": 5.0,  # 5 seconds sleeping = CRITICAL immediately
+            "using_phone": 10.0,
+            "distracted": 20.0,
+        }
+    )
+    drowsy_escalation_seconds: float = 30.0
 
 
 class DriverStateMachine:
-    """
-    Resolves per-event scores into a single DriverSafetyState.
-
-    Inputs:  dict[event_name, score_0_to_1]  (from TemporalReasoningEngine)
-    Outputs: DriverStateSnapshot
-    """
+    """Resolves per-event scores into a single driver safety state."""
 
     def __init__(self, config: StateMachineConfig) -> None:
         self._cfg = config
@@ -89,11 +96,9 @@ class DriverStateMachine:
 
     def tick(
         self,
-        scores: Dict[str, float],   # {event: score 0–1}
+        scores: Dict[str, float],
         now: float,
     ) -> DriverStateSnapshot:
-
-        # ── 1. Presence check ─────────────────────────────────────────
         has_presence = any(
             scores.get(e, 0.0) > 0.0
             for e in ("sleeping", "drowsy", "using_phone", "distracted", "normal")
@@ -106,7 +111,6 @@ class DriverStateMachine:
         else:
             self._no_presence_since = None
 
-        # ── 2. Update active events ───────────────────────────────────
         cfg = self._cfg
         for event, threshold in cfg.event_enter_thresholds.items():
             score = scores.get(event, 0.0)
@@ -124,7 +128,6 @@ class DriverStateMachine:
                 if score < exit_threshold:
                     self._active_events.pop(event, None)
 
-        # ── 3. Drowsy duration tracking ───────────────────────────────
         if "drowsy" in self._active_events:
             if self._drowsy_started_at is None:
                 self._drowsy_started_at = now
@@ -133,53 +136,52 @@ class DriverStateMachine:
 
         drowsy_duration = (
             now - self._drowsy_started_at
-            if self._drowsy_started_at is not None else 0.0
+            if self._drowsy_started_at is not None
+            else 0.0
         )
         escalated = drowsy_duration >= cfg.drowsy_escalation_seconds
 
-        # ── 4. Determine target state ─────────────────────────────────
-        sleeping_active    = "sleeping" in self._active_events
-        phone_active       = "using_phone" in self._active_events
-        distracted_active  = "distracted" in self._active_events
-        drowsy_active      = "drowsy" in self._active_events
+        sleeping_active = "sleeping" in self._active_events
+        phone_active = "using_phone" in self._active_events
+        distracted_active = "distracted" in self._active_events
+        drowsy_active = "drowsy" in self._active_events
 
         current_duration = now - self._state_entered_at
 
         if sleeping_active:
-            # Sleeping is always at least DANGEROUS; CRITICAL after threshold.
             if current_duration >= cfg.critical_duration_seconds.get("sleeping", 5.0):
                 target = DriverSafetyState.CRITICAL
             else:
                 target = DriverSafetyState.DANGEROUS
 
         elif phone_active:
-            if current_duration >= cfg.critical_duration_seconds.get("using_phone", 10.0):
+            if current_duration >= cfg.critical_duration_seconds.get(
+                "using_phone", 10.0
+            ):
                 target = DriverSafetyState.CRITICAL
             else:
                 target = DriverSafetyState.DANGEROUS
 
         elif escalated:
-            # Drowsy for too long → DANGEROUS even without sleeping label
             target = DriverSafetyState.DANGEROUS
 
         elif drowsy_active:
             target = DriverSafetyState.DROWSY
 
         elif distracted_active:
-            if current_duration >= cfg.critical_duration_seconds.get("distracted", 15.0):
+            if current_duration >= cfg.critical_duration_seconds.get(
+                "distracted", 15.0
+            ):
                 target = DriverSafetyState.DANGEROUS
             else:
-                target = DriverSafetyState.DROWSY  # distracted starts at DROWSY level
+                target = DriverSafetyState.DROWSY
 
         else:
             target = DriverSafetyState.NORMAL
 
-        # ── 5. Apply exit hysteresis (prevent rapid state drops) ──────
-        # Only allow downward transitions after holding the lower state
-        # for EXIT_HOLD_SECONDS. Upward transitions are immediate.
         if self._is_downgrade(self._state, target):
             if current_duration < cfg.exit_hold_seconds:
-                target = self._state  # hold current state
+                target = self._state
 
         return self._transition(target, scores, now)
 
@@ -210,8 +212,7 @@ class DriverStateMachine:
         dominant_event, dominant_score = self._resolve_dominant(scores)
 
         drowsy_duration = (
-            now - self._drowsy_started_at
-            if self._drowsy_started_at else 0.0
+            now - self._drowsy_started_at if self._drowsy_started_at else 0.0
         )
         escalated = drowsy_duration >= self._cfg.drowsy_escalation_seconds
 
@@ -226,9 +227,7 @@ class DriverStateMachine:
             now=now,
         )
 
-    def _resolve_dominant(
-        self, scores: Dict[str, float]
-    ) -> tuple[str, float]:
+    def _resolve_dominant(self, scores: Dict[str, float]) -> tuple[str, float]:
         """
         Return the highest-priority active event and its score.
         Priority order: sleeping > using_phone > distracted > drowsy

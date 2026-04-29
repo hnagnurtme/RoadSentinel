@@ -1,32 +1,4 @@
-"""
-interfaces/api/v1/websocket.py
--------------------------------
-WebSocket endpoints:
-  /ws/alerts    — alert broadcast channel (browser dashboards)
-  /ws/camera    — ESP32-CAM binary JPEG stream (also at /ws/camera root)
-  /ws/frontend  — browser viewer channel (live frames + driver events)
-
-All AI classification lives in ``core/ai/``.  This module wires transport to
-the AI engine.
-
-Grace-period design
--------------------
-Each dangerous event has a short *grace period* so the UI does not flicker
-when the YOLO model misses a detection for 1-2 frames.  The priority order
-is strictly:
-
-  sleeping  >  using_phone  >  distracted  >  drowsy
-
-A lower-priority grace period only applies when no higher-priority event is
-currently active or in grace.
-
-Drowsy escalation
------------------
-If the driver is continuously drowsy for >= DROWSY_ESCALATION_SECONDS the
-broadcast payload carries ``escalated: true`` so the frontend/device can
-increase alarm urgency (sound louder, more visible indicator) without changing
-the DB event type.
-"""
+"""WebSocket endpoints for alerts, camera frames, and browser viewers."""
 
 from __future__ import annotations
 
@@ -34,7 +6,7 @@ import asyncio
 import json
 import logging
 import time
-from typing import Optional
+from typing import Callable, Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -49,7 +21,9 @@ from shared.config import settings
 logger = logging.getLogger("roadsentinel.ws")
 
 
-def create_save_alert_function(alert_type: str) -> callable:
+def create_save_alert_function(
+    alert_type: str,
+) -> Callable[[object, str, str | None], dict | None]:
     """Create a save_alert function for a specific alert type."""
 
     def save_alert(db: object, message: str, evidence_url: str | None) -> dict | None:
@@ -61,11 +35,11 @@ def create_save_alert_function(alert_type: str) -> callable:
         # Map lowercase event keys to uppercase AlertType enum values
         alert_type_mapping = {
             "sleeping": "SLEEPING",
-            "using_phone": "USING_PHONE", 
+            "using_phone": "USING_PHONE",
             "distracted": "DISTRACTED",
             "drowsy": "SLEEPING",  # Map drowsy to SLEEPING for escalation
         }
-        
+
         mapped_alert_type = alert_type_mapping.get(alert_type, "SLEEPING")
         domain_alert_type = AlertType(mapped_alert_type)
 
@@ -73,9 +47,9 @@ def create_save_alert_function(alert_type: str) -> callable:
             CreateAlertCommand(
                 message=message,
                 alert_type=domain_alert_type,
-                device_id=settings.DRIVER_EVENT_ALERT_DEVICE_ID,
-                driver_id=settings.DRIVER_EVENT_ALERT_DRIVER_ID,
-                vehicle_id=settings.DRIVER_EVENT_ALERT_VEHICLE_ID,
+                device_id=settings.DRIVER_EVENT_FALLBACK_DEVICE_ID,
+                driver_id=settings.DRIVER_EVENT_FALLBACK_DRIVER_ID,
+                vehicle_id=settings.DRIVER_EVENT_FALLBACK_VEHICLE_ID,
                 evidence_url=evidence_url,
                 latitude=None,
                 longitude=None,
@@ -99,9 +73,6 @@ def create_save_alert_function(alert_type: str) -> callable:
         }
 
     return save_alert
-
-
-# ── WebSocket Connection Managers ─────────────────────────────────────────────
 
 
 class AlertsWebSocketManager:
@@ -206,8 +177,6 @@ class FrontendManager:
             self.disconnect(ws)
 
 
-# ── Module-level singletons ───────────────────────────────────────────────────
-
 alerts_ws_manager = AlertsWebSocketManager()
 camera_mgr = CameraManager()
 frontend_mgr = FrontendManager()
@@ -215,19 +184,8 @@ frontend_mgr = FrontendManager()
 router = APIRouter(prefix="/ws", tags=["websocket"])
 
 
-# ── Grace-period tracker ──────────────────────────────────────────────────────
-
-
 class _GraceTracker:
-    """Prevents event flickering when the model misses a detection for 1-2 frames.
-
-    Usage::
-
-        if raw_event == "sleeping":
-            sleep_grace.record(raw_conf, now)
-        elif sleep_grace.is_active(now):
-            event, confidence = "sleeping", sleep_grace.last_conf
-    """
+    """Tracks a short grace window for the last active event."""
 
     def __init__(self, grace_seconds: float) -> None:
         self._grace = grace_seconds
@@ -235,12 +193,12 @@ class _GraceTracker:
         self._last_conf: float = 0.0
 
     def record(self, conf: float, now: float) -> None:
-        """Call every frame the event IS actively detected."""
+        """Record the latest active observation."""
         self._last_seen_at = now
-        self._last_conf = max(conf, self._last_conf * 0.9)  # smooth decay
+        self._last_conf = max(conf, self._last_conf * 0.9)
 
     def is_active(self, now: float) -> bool:
-        """True if inside the grace window (event not detected this frame)."""
+        """Return True while the grace window is still valid."""
         return (
             self._last_seen_at is not None and (now - self._last_seen_at) < self._grace
         )
@@ -250,11 +208,7 @@ class _GraceTracker:
         return self._last_conf
 
 
-# ── Shared helpers ────────────────────────────────────────────────────────────
-
-
 async def _broadcast_saved_alert(saved_alert: dict) -> None:
-    """Broadcast a persisted alert to both alert and frontend channels."""
     await alerts_ws_manager.broadcast({"event": "alert.created", "data": saved_alert})
     await frontend_mgr.broadcast(
         json.dumps({"type": "alert_created", "data": saved_alert})
@@ -264,7 +218,6 @@ async def _broadcast_saved_alert(saved_alert: dict) -> None:
 async def _persist_and_broadcast(
     pipeline: DriverEvidencePipeline, confidence: float
 ) -> None:
-    """Persist an alert in a thread pool then broadcast the result."""
     loop = asyncio.get_running_loop()
     saved_alert = await loop.run_in_executor(
         None, pipeline.save_event_alert, confidence
@@ -282,53 +235,35 @@ def _apply_grace_periods(
     distracted_grace: _GraceTracker,
     drowsy_grace: _GraceTracker,
 ) -> tuple[str, float]:
-    """Apply grace periods in priority order to prevent UI flickering.
-
-    Priority (highest first): sleeping > using_phone > distracted > drowsy.
-    A lower-priority grace only applies if no higher-priority event wins.
-
-    Returns:
-        ``(effective_event, effective_confidence)``
-    """
-    # ── Sleeping (highest priority) ───────────────────────────────────────
     if raw_event == "sleeping":
         sleep_grace.record(raw_conf, now)
         return "sleeping", raw_conf
     if sleep_grace.is_active(now):
         return "sleeping", max(raw_conf, sleep_grace.last_conf)
 
-    # ── Phone use ─────────────────────────────────────────────────────────
     if raw_event == "using_phone":
         phone_grace.record(raw_conf, now)
         return "using_phone", raw_conf
     if phone_grace.is_active(now):
         return "using_phone", max(raw_conf, phone_grace.last_conf)
 
-    # ── Distracted ────────────────────────────────────────────────────────
-    # NOTE: distracted grace only applies when no phone grace is active.
     if raw_event == "distracted":
         distracted_grace.record(raw_conf, now)
         return "distracted", raw_conf
     if distracted_grace.is_active(now):
         return "distracted", max(raw_conf, distracted_grace.last_conf)
 
-    # ── Drowsy (early warning, lowest priority) ───────────────────────────
     if raw_event == "drowsy":
         drowsy_grace.record(raw_conf, now)
         return "drowsy", raw_conf
     if drowsy_grace.is_active(now):
         return "drowsy", max(raw_conf, drowsy_grace.last_conf)
 
-    # No alert event — return raw classification ("normal" / "unknown").
     return raw_event, raw_conf
-
-
-# ── /ws/alerts endpoint ───────────────────────────────────────────────────────
 
 
 @router.websocket("/alerts")
 async def alerts_websocket(websocket: WebSocket) -> None:
-    """Alert broadcast channel — browser dashboards subscribe here."""
     await alerts_ws_manager.connect(websocket)
     try:
         while True:
@@ -339,15 +274,10 @@ async def alerts_websocket(websocket: WebSocket) -> None:
         alerts_ws_manager.disconnect(websocket)
 
 
-# ── /ws/camera endpoint ───────────────────────────────────────────────────────
-
-
 @router.websocket("/camera")
 async def camera_websocket(websocket: WebSocket) -> None:
-    """ESP32-CAM streams binary JPEG frames here."""
     await camera_mgr.connect(websocket)
 
-    # Initialize camera processor which encapsulates all AI logic
     processor = CameraFrameProcessor()
     frame_idx: int = 0
     t_last_log: float = time.time()
@@ -357,7 +287,6 @@ async def camera_websocket(websocket: WebSocket) -> None:
         while True:
             data = await websocket.receive()
 
-            # ── Text message (hello / pong / status) ─────────────────────
             if data.get("text"):
                 try:
                     msg = json.loads(data["text"])
@@ -370,7 +299,6 @@ async def camera_websocket(websocket: WebSocket) -> None:
                     pass
                 continue
 
-            # ── Binary JPEG frame ─────────────────────────────────────────
             jpeg_bytes: Optional[bytes] = data.get("bytes")
             if not jpeg_bytes:
                 continue
@@ -378,27 +306,31 @@ async def camera_websocket(websocket: WebSocket) -> None:
             frame_idx += 1
             now = time.monotonic()
 
-            # Process frame using the camera processor
             result = processor.process_frame(jpeg_bytes, frame_idx, now)
 
-            # ── Send raw frame with detection data to frontend viewers ─────────────────
             await frontend_mgr.send_raw_frame(jpeg_bytes)
-            
-            # Also send frame metadata with detections for frontend visualization
+
             if result.detections or result.event:
-                # Join all active events for the frontend display
                 display_event = result.event
                 if result.all_events and len(result.all_events) > 1:
                     display_event = " + ".join(result.all_events)
 
-                # Construct event timing for the frontend
                 event_timing = None
-                if display_event and display_event != "normal" and display_event != "unknown":
-                    duration_sec = processor.event_logic.get_event_duration(result.event, now)
+                if (
+                    display_event
+                    and display_event != "normal"
+                    and display_event != "unknown"
+                ):
+                    current_event = result.event
+                    if current_event is None:
+                        continue
+                    duration_sec = processor.event_logic.get_event_duration(
+                        current_event, now
+                    )
                     event_timing = {
                         "active": True,
                         "event": display_event,
-                        "started_at": None, 
+                        "started_at": None,
                         "duration_ms": int(duration_sec * 1000),
                         "confidence": result.confidence,
                     }
@@ -415,19 +347,19 @@ async def camera_websocket(websocket: WebSocket) -> None:
                 }
                 await frontend_mgr.broadcast(json.dumps(frame_message))
 
-            # ── Handle Evidence Persistence and Alert Broadcast ────────────────
             if result.should_save_evidence and result.event:
                 pipeline = processor.pipelines.get(result.event)
                 if pipeline:
-                    logger.info("[AI] Triggering async persistence for %s", result.event)
-                    # Run persistence in background to not block the websocket loop
-                    asyncio.create_task(_persist_and_broadcast(pipeline, result.confidence))
+                    logger.info(
+                        "[AI] Triggering async persistence for %s", result.event
+                    )
+                    asyncio.create_task(
+                        _persist_and_broadcast(pipeline, result.confidence)
+                    )
 
-            # ── Broadcast real-time events (no evidence yet) ──────────────────
             if result.should_broadcast and result.event:
                 last_sent = last_alert_sent_at.get(result.event, 0.0)
                 if now - last_sent >= settings.DRIVER_EVENT_ALERT_COOLDOWN_SECONDS:
-                    # Join all events for the real-time alert too
                     display_event = result.event
                     if result.all_events and len(result.all_events) > 1:
                         display_event = " + ".join(result.all_events)
@@ -447,7 +379,6 @@ async def camera_websocket(websocket: WebSocket) -> None:
                     )
                     last_alert_sent_at[result.event] = now
 
-            # ── Periodic logging (every 10 seconds) ─────────────────────
             if now - t_last_log >= 10.0:
                 logger.info(
                     "[AI] frame=%d event=%s conf=%.2f dets=%d",
@@ -461,17 +392,12 @@ async def camera_websocket(websocket: WebSocket) -> None:
     except WebSocketDisconnect:
         pass
     finally:
-        # Reset AI state on disconnect
         processor.reset()
         camera_mgr.disconnect()
 
 
-# ── /ws/frontend endpoint ─────────────────────────────────────────────────────
-
-
 @router.websocket("/frontend")
 async def frontend_websocket(websocket: WebSocket) -> None:
-    """Browser viewers connect here to receive live frames and driver events."""
     await frontend_mgr.connect(websocket)
 
     try:

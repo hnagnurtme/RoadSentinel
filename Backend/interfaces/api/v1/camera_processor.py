@@ -1,10 +1,4 @@
-"""
-interfaces/api/v1/camera_processor.py
------------------------------------
-CameraFrameProcessor class encapsulates per-frame AI processing state and logic.
-
-Extracted from camera_websocket to improve testability and follow Single Responsibility Principle.
-"""
+"""Per-frame AI processing for the camera websocket."""
 
 from __future__ import annotations
 
@@ -21,8 +15,9 @@ from shared.config import settings
 
 logger = logging.getLogger(__name__)
 
+
 class _GraceTracker(NamedTuple):
-    """Grace period tracker. `expires_at` is an absolute time.monotonic() deadline."""
+    """Tracks a grace window for the last active event."""
 
     expires_at: float  # absolute monotonic deadline (0.0 = already expired)
     active_event: str | None = None
@@ -41,33 +36,22 @@ class FrameResult(NamedTuple):
 
 
 class CameraFrameProcessor:
-    """Encapsulates per-frame AI processing state and logic.
-
-    This class manages:
-    - Event classification logic
-    - Evidence pipeline state
-    - Grace period tracking
-    - Window trigger evaluation
-    - Alert generation
-    """
+    """Encapsulates the per-frame AI pipeline state."""
 
     def __init__(self) -> None:
-        # Core AI components
         self.event_logic = DriverEventClassifier()
 
-        # Evidence pipelines with injected save_alert functions
         self._setup_evidence_pipelines()
 
-        # Window triggers for evidence collection
         self.sleep_trigger = WindowTrigger(
             fps=settings.DRIVER_EVENT_EVIDENCE_FPS,
             window_seconds=settings.DRIVER_EVENT_EVIDENCE_SECONDS,
-            occupancy_threshold=0.9,  # Lowered from 1.0 to prevent single missed frames from resetting trigger
+            occupancy_threshold=0.9,
         )
         self.phone_trigger = WindowTrigger(
             fps=settings.DRIVER_EVENT_EVIDENCE_FPS,
             window_seconds=settings.DRIVER_EVENT_EVIDENCE_SECONDS,
-            occupancy_threshold=0.9,  # Lowered from 1.0 to prevent single missed frames from resetting trigger
+            occupancy_threshold=0.9,
         )
         self.distracted_trigger = WindowTrigger(
             fps=settings.DRIVER_EVENT_EVIDENCE_FPS,
@@ -75,21 +59,13 @@ class CameraFrameProcessor:
             occupancy_threshold=0.7,
         )
 
-        # Grace period trackers to prevent flickering
         self.sleep_grace = _GraceTracker(expires_at=0.0)
         self.phone_grace = _GraceTracker(expires_at=0.0)
         self.distracted_grace = _GraceTracker(expires_at=0.0)
 
-        # State tracking
         self.last_event: str | None = None
         self.last_broadcast_time: float = 0.0
-        self.evidence_buffers: dict[str, list] = {
-            "sleeping": [],
-            "using_phone": [],
-            "distracted": [],
-        }
 
-        # Pipelines mapping for easy access by event name
         self.pipelines = {
             "sleeping": self.sleep_pipeline,
             "using_phone": self.phone_pipeline,
@@ -97,7 +73,6 @@ class CameraFrameProcessor:
         }
 
     def _setup_evidence_pipelines(self) -> None:
-        """Initialize evidence pipelines with proper save_alert functions."""
         from interfaces.api.v1.websocket import create_save_alert_function
 
         sleep_save_alert = create_save_alert_function("sleeping")
@@ -108,7 +83,6 @@ class CameraFrameProcessor:
             build_evidence_pipelines(SessionLocal, save_alert=None)
         )
 
-        # Inject individual save_alert functions
         self.sleep_pipeline._save_alert = sleep_save_alert
         self.phone_pipeline._save_alert = phone_save_alert
         self.distracted_pipeline._save_alert = distracted_save_alert
@@ -116,31 +90,19 @@ class CameraFrameProcessor:
     def process_frame(
         self, jpeg_bytes: bytes, frame_idx: int, now: float
     ) -> FrameResult:
-        """Process a single frame and return the result.
-
-        Args:
-            jpeg_bytes: Raw JPEG frame data from ESP32-CAM
-            frame_idx: Current frame index for debugging/logging
-            now: Current timestamp for cooldown calculations
-
-        Returns:
-            FrameResult containing processing outcomes
-        """
         processing_start = time.time()
         frame_size = len(jpeg_bytes)
-        
-        # Adaptive frame skipping based on processing load
+
         skip_factor = self._get_adaptive_skip_factor(now)
-        
+
         if frame_idx % (skip_factor + 1) != 0:
-            # Record skipped frame for performance monitoring
             processing_time = (time.time() - processing_start) * 1000
             performance_monitor.record_frame(
                 processing_time_ms=processing_time,
                 inference_time_ms=0.0,
                 detection_count=0,
                 frame_size_bytes=frame_size,
-                skipped=True
+                skipped=True,
             )
             return FrameResult(
                 event=None,
@@ -151,7 +113,6 @@ class CameraFrameProcessor:
                 should_save_evidence=False,
             )
 
-        # Run AI inference with timing
         inference_start = time.time()
         try:
             detections = inference_engine.run_inference(jpeg_bytes)
@@ -161,43 +122,36 @@ class CameraFrameProcessor:
             performance_monitor.record_error()
             logger.error(f"AI inference failed: {e}")
             detections = []
-        
+
         filtered = filter_detections(detections)
 
-        # Classify driver event
         event, confidence, all_active = self.event_logic.classify(filtered, now)
 
-        # Check for drowsy escalation
         escalated = (
             event == "drowsy"
             and self.event_logic.get_drowsy_duration(now)
             >= settings.DRIVER_EVENT_DROWSY_ESCALATION_SECONDS
         )
 
-        # Update evidence buffers and triggers
         should_save_evidence = self._update_evidence_pipelines(
             event, confidence, jpeg_bytes, filtered, now, all_active
         )
 
-        # Determine if we should broadcast (cooldown logic)
         should_broadcast = self._should_broadcast_event(event, now)
 
-        # Update grace period trackers
         self._update_grace_trackers(event, now)
 
-        # Store last event for next iteration
         self.last_event = event
         if should_broadcast:
             self.last_broadcast_time = now
 
-        # Record performance metrics
         processing_time = (time.time() - processing_start) * 1000
         performance_monitor.record_frame(
             processing_time_ms=processing_time,
             inference_time_ms=inference_time,
             detection_count=len(filtered),
             frame_size_bytes=frame_size,
-            skipped=False
+            skipped=False,
         )
 
         return FrameResult(
@@ -219,46 +173,30 @@ class CameraFrameProcessor:
         now: float,
         all_active: list[str] | None = None,
     ) -> bool:
-        """Update evidence pipelines and check if any should save evidence."""
         should_save = False
-        
-        # Use joined event name for the evidence overlay if multiple active
+
         display_event = event
         if all_active and len(all_active) > 1:
             display_event = " + ".join(all_active)
 
-        # Update appropriate pipeline based on event
-        if event == "sleeping":
-            self.sleep_pipeline.push_frame(
+        for pipeline in self.pipelines.values():
+            pipeline.push_frame(
                 jpeg_bytes=jpeg_bytes,
                 detections=detections,
                 event=display_event,
-                duration_ms=0,  # Duration handled by backend logic now
+                duration_ms=0,
                 confidence=confidence,
             )
+
+        if event == "sleeping":
             should_save = self.sleep_trigger.update(True)  # Event detected
 
         elif event == "using_phone":
-            self.phone_pipeline.push_frame(
-                jpeg_bytes=jpeg_bytes,
-                detections=detections,
-                event=display_event,
-                duration_ms=0,
-                confidence=confidence,
-            )
             should_save = self.phone_trigger.update(True)  # Event detected
 
         elif event == "distracted":
-            self.distracted_pipeline.push_frame(
-                jpeg_bytes=jpeg_bytes,
-                detections=detections,
-                event=display_event,
-                duration_ms=0,
-                confidence=confidence,
-            )
             should_save = self.distracted_trigger.update(True)  # Event detected
         else:
-            # No event detected - update triggers with False to reset windows
             self.sleep_trigger.update(False)
             self.phone_trigger.update(False)
             self.distracted_trigger.update(False)
@@ -266,27 +204,22 @@ class CameraFrameProcessor:
         return should_save
 
     def _should_broadcast_event(self, event: str | None, now: float) -> bool:
-        """Determine if event should be broadcast based on cooldown and grace periods."""
         if event is None:
             return False
 
-        # Check cooldown
         time_since_broadcast = now - self.last_broadcast_time
         if time_since_broadcast < settings.DRIVER_EVENT_ALERT_COOLDOWN_SECONDS:
             return False
 
-        # Check grace periods - higher priority events override lower priority grace
         if event == "sleeping":
-            return True  # Highest priority, no grace check needed
+            return True
 
         elif event == "using_phone":
-            # Phone can't broadcast during sleeping grace
             if self.sleep_grace.active_event == "sleeping":
                 return False
             return True
 
         elif event == "distracted":
-            # Distracted can't broadcast during sleeping or phone grace
             if self.sleep_grace.active_event in {"sleeping", "using_phone"}:
                 return False
             if self.phone_grace.active_event == "using_phone":
@@ -294,7 +227,6 @@ class CameraFrameProcessor:
             return True
 
         elif event == "drowsy":
-            # Drowsy can't broadcast during higher priority grace periods
             if (
                 self.sleep_grace.active_event == "sleeping"
                 or self.phone_grace.active_event == "using_phone"
@@ -306,8 +238,6 @@ class CameraFrameProcessor:
         return False
 
     def _update_grace_trackers(self, event: str | None, now: float) -> None:
-        """Update grace period trackers based on current event."""
-        # Update sleeping grace
         if event == "sleeping":
             self.sleep_grace = _GraceTracker(
                 expires_at=now + settings.DRIVER_EVENT_SLEEPING_RELEASE_GRACE_SECONDS,
@@ -316,7 +246,6 @@ class CameraFrameProcessor:
         elif self.sleep_grace.active_event and now >= self.sleep_grace.expires_at:
             self.sleep_grace = _GraceTracker(expires_at=0.0, active_event=None)
 
-        # Update phone grace
         if event == "using_phone":
             self.phone_grace = _GraceTracker(
                 expires_at=now + settings.DRIVER_EVENT_PHONE_RELEASE_GRACE_SECONDS,
@@ -325,7 +254,6 @@ class CameraFrameProcessor:
         elif self.phone_grace.active_event and now >= self.phone_grace.expires_at:
             self.phone_grace = _GraceTracker(expires_at=0.0, active_event=None)
 
-        # Update distracted grace
         if event == "distracted":
             self.distracted_grace = _GraceTracker(
                 expires_at=now + settings.DRIVER_EVENT_DISTRACTED_RELEASE_GRACE_SECONDS,
@@ -338,32 +266,17 @@ class CameraFrameProcessor:
             self.distracted_grace = _GraceTracker(expires_at=0.0, active_event=None)
 
     def _get_adaptive_skip_factor(self, now: float) -> int:
-        """Get adaptive frame skipping factor based on current load."""
-        # Base skip factor from config
         base_skip = 2
-        
-        # Increase skip factor if we're processing evidence (high load)
-        if any(len(buffer) > 0 for buffer in self.evidence_buffers.values()):
-            return base_skip + 1
-            
-        # Decrease skip factor if no recent events (can afford more processing)
+
         if now - self.last_broadcast_time > 10.0:  # 10 seconds without events
             return max(0, base_skip - 1)
-            
+
         return base_skip
 
     def reset(self) -> None:
-        """Reset all internal state (call on ESP32 disconnect)."""
         self.event_logic.reset()
         self.last_event = None
         self.last_broadcast_time = 0.0
         self.sleep_grace = _GraceTracker(expires_at=0.0)
         self.phone_grace = _GraceTracker(expires_at=0.0)
         self.distracted_grace = _GraceTracker(expires_at=0.0)
-
-        # Clear evidence buffers
-        self.evidence_buffers = {
-            "sleeping": [],
-            "using_phone": [],
-            "distracted": [],
-        }

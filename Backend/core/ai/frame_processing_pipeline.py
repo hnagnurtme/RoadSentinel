@@ -1,11 +1,4 @@
-"""
-core/ai/frame_processing_pipeline.py
-------------------------------------
-Integrated frame processing pipeline combining all AI components.
-
-This replaces the scattered logic in camera_websocket with a clean,
-testable pipeline that follows the redesign architecture.
-"""
+"""Integrated frame processing pipeline for AI frame analysis."""
 
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
@@ -37,18 +30,18 @@ from .temporal_reasoning import TemporalConfig, TemporalReasoningEngine
 
 @dataclass
 class FrameResult:
-    """Result of processing a single frame through the pipeline."""
+    """Result of a single processed frame."""
 
     snapshot: DriverStateSnapshot
     alert_decision: AlertDecision
-    raw_detections: List[Dict[str, Any]]  # For evidence and debugging
+    raw_detections: List[Dict[str, Any]]
     should_broadcast: bool
-    evidence_ready: bool  # True when evidence clip is ready for processing
+    evidence_ready: bool
 
 
 @dataclass
 class PipelineConfig:
-    """Complete configuration for the frame processing pipeline."""
+    """Pipeline configuration."""
 
     temporal: TemporalConfig
     state_machine: StateMachineConfig
@@ -57,18 +50,7 @@ class PipelineConfig:
 
 
 class FrameProcessingPipeline:
-    """
-    Main pipeline that processes frames through all AI components.
-
-    Pipeline flow:
-      1. YOLO inference (if due)
-      2. Detection normalisation
-      3. Confidence gating
-      4. Temporal reasoning (EWMA + dropout compensation)
-      5. State machine evaluation
-      6. Alert decision
-      7. Evidence buffer management
-    """
+        """Processes frames through inference, state, alerting, and evidence."""
 
     def __init__(
         self,
@@ -79,7 +61,6 @@ class FrameProcessingPipeline:
         self._cfg = config
         self._session = session
 
-        # Initialize pipeline components
         self._temporal_engine = TemporalReasoningEngine(config.temporal)
         self._state_machine = DriverStateMachine(config.state_machine)
         self._alert_engine = AlertDecisionEngine(config.alert, session)
@@ -88,48 +69,29 @@ class FrameProcessingPipeline:
             config.evidence
         )
 
-        # Frame tracking
         self._frame_idx = 0
         self._last_inference_frame = -1
         self._last_detections: List[Dict[str, Any]] = []
 
     def process_frame(self, jpeg_bytes: bytes, now: float) -> FrameResult:
-        """
-        Process a single frame through the complete pipeline.
-
-        Args:
-            jpeg_bytes: Raw JPEG frame data from ESP32-CAM
-            now: Current timestamp for timing calculations
-
-        Returns:
-            FrameResult with all processing outcomes
-        """
         self._frame_idx += 1
 
-        # Step 1: YOLO inference (only on certain frames)
         raw_detections = self._run_inference_if_needed(jpeg_bytes, now)
 
-        # Step 2: Detection normalisation
         normalised_detections = normalise(raw_detections)
 
-        # Step 3: Best confidence per event
         event_conf = best_confidence_per_event(normalised_detections)
 
-        # Step 4: Apply confidence gates
         gated_conf = apply_confidence_gates(
             event_conf, self._cfg.temporal.confidence_gates
         )
 
-        # Step 5: Temporal reasoning (EWMA + dropout compensation)
         temporal_scores = self._temporal_engine.tick(gated_conf, now)
 
-        # Step 6: State machine evaluation
         snapshot = self._state_machine.tick(temporal_scores, now)
 
-        # Step 7: Alert decision
         alert_decision = self._alert_engine.evaluate(snapshot, now)
 
-        # Step 8: Evidence buffer management
         evidence_ready = self._manage_evidence(
             jpeg_bytes, raw_detections, snapshot, alert_decision, now
         )
@@ -145,9 +107,8 @@ class FrameProcessingPipeline:
     def _run_inference_if_needed(
         self, jpeg_bytes: bytes, now: float
     ) -> List[Dict[str, Any]]:
-        """Run YOLO inference only on frames that meet SKIP_FRAMES criteria."""
         if self._frame_idx % (SKIP_FRAMES + 1) != 0:
-            return self._last_detections  # Use last known detections
+            return self._last_detections
 
         try:
             detections = inference_engine.run_inference(jpeg_bytes)
@@ -155,7 +116,6 @@ class FrameProcessingPipeline:
             self._last_inference_frame = self._frame_idx
             return detections
         except Exception as e:
-            # Inference failed - return empty to trigger safe state
             print(f"Inference failed on frame {self._frame_idx}: {e}")
             return []
 
@@ -167,9 +127,6 @@ class FrameProcessingPipeline:
         alert_decision: AlertDecision,
         now: float,
     ) -> bool:
-        """Manage evidence buffer based on alert decisions."""
-
-        # Always push frame to buffer (pre-event capture)
         self._evidence_buffer.push(
             jpeg_bytes=jpeg_bytes,
             detections=raw_detections,
@@ -177,25 +134,17 @@ class FrameProcessingPipeline:
             confidence=snapshot.dominant_score,
         )
 
-        # Trigger evidence collection if alert requires it
         if alert_decision.should_alert and alert_decision.should_save_evidence:
-            if not self._evidence_buffer._triggered:  # Only trigger once per alert
+            if not self._evidence_buffer._triggered:
                 self._evidence_buffer.trigger()
 
-        # Process evidence clip when ready
         if self._evidence_buffer.is_ready():
-            # TODO: Process evidence asynchronously
-            # frames = self._evidence_buffer.get_clip_frames()
-            # evidence_url = self._evidence_processor.process_clip(
-            #     frames, alert_id, snapshot.dominant_event
-            # )
             self._evidence_buffer.reset()
             return True
 
         return False
 
     def reset(self) -> None:
-        """Reset all pipeline state (call on session disconnect)."""
         self._temporal_engine.reset()
         self._state_machine.reset()
         self._alert_engine.reset()
@@ -206,20 +155,16 @@ class FrameProcessingPipeline:
 
     @property
     def frame_idx(self) -> int:
-        """Current frame index for debugging."""
         return self._frame_idx
 
     @property
     def current_state(self) -> str:
-        """Current driver safety state for monitoring."""
         return self._state_machine._state.value
 
 
 def create_pipeline_config(settings: Any) -> PipelineConfig:
-    """Create pipeline configuration from settings object."""
     driver_event_cfg = settings.DRIVER_EVENT
 
-    # Temporal config
     temporal = TemporalConfig(
         tracked_events=driver_event_cfg.temporal.tracked_events,
         confidence_gates=driver_event_cfg.temporal.confidence_gates,
@@ -227,7 +172,6 @@ def create_pipeline_config(settings: Any) -> PipelineConfig:
         alpha_fall=driver_event_cfg.temporal.alpha_fall,
     )
 
-    # State machine config
     state_machine = StateMachineConfig(
         unknown_enter_seconds=driver_event_cfg.state_machine.unknown_enter_seconds,
         exit_hold_seconds=driver_event_cfg.state_machine.exit_hold_seconds,
@@ -238,14 +182,12 @@ def create_pipeline_config(settings: Any) -> PipelineConfig:
         drowsy_escalation_seconds=driver_event_cfg.state_machine.drowsy_escalation_seconds,
     )
 
-    # Alert config
     alert = AlertConfig(
         require_identified_driver=driver_event_cfg.alert.require_identified_driver,
         min_stable_seconds=driver_event_cfg.alert.min_stable_seconds,
         cooldown_seconds=driver_event_cfg.alert.cooldown_seconds,
     )
 
-    # Evidence config
     evidence = EvidenceConfig(
         enabled=driver_event_cfg.evidence.enabled,
         fps=driver_event_cfg.evidence.fps,

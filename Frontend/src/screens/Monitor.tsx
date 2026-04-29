@@ -572,11 +572,12 @@ function EventTimingPanel({ eventTiming }: EventTimingPanelProps) {
   if (!eventTiming?.active) {
     return (
       <div className="rounded-lg bg-surface-container px-3 py-1.5">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-outline">Event Timer: Idle</span>
+        <span className="text-[10px] font-bold uppercase tracking-wider text-outline">
+          Event Timer: Idle
+        </span>
       </div>
     );
   }
-
   const seconds = Math.max(0, Math.floor((eventTiming.duration_ms ?? 0) / 1000));
   const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
   const ss = String(seconds % 60).padStart(2, "0");
@@ -591,13 +592,15 @@ function EventTimingPanel({ eventTiming }: EventTimingPanelProps) {
   );
 }
 
-// ─── Monitor screen ───────────────────────────────────────────────────────────
+// ─── Live Monitor View (Sub-component) ──────────────────────────────────────────
 
-interface MonitorProps {
+interface LiveMonitorViewProps {
   deviceId: string;
+  selectedDriver: Driver;
+  onBack: () => void;
 }
 
-export function Monitor({ deviceId }: MonitorProps) {
+function LiveMonitorView({ deviceId, selectedDriver, onBack }: LiveMonitorViewProps) {
   const {
     isConnected,
     cameraOnline,
@@ -609,145 +612,93 @@ export function Monitor({ deviceId }: MonitorProps) {
     eventTiming,
     liveAlerts,
     reconnect,
-  } =
-    useCameraStream(deviceId);
-  const { drivers, loading: driversLoading } = useDrivers();
+  } = useCameraStream(deviceId);
 
-  const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastAlertIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (liveAlerts.length === 0) {
-      return;
-    }
-
+    if (liveAlerts.length === 0) return;
     const newest = liveAlerts[0];
-    if (!newest || lastAlertIdRef.current === newest.id) {
-      return;
-    }
+    if (!newest || lastAlertIdRef.current === newest.id) return;
     lastAlertIdRef.current = newest.id;
 
-    // Process audio asynchronously to prevent UI blocking
     setTimeout(() => {
       try {
-        console.log(`[DEBUG] Playing audio for alert: ${newest.event}`);
-        
-        const AudioContextCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-        if (!AudioContextCtor) {
-          return;
-        }
-
-        if (!audioContextRef.current) {
-          audioContextRef.current = new AudioContextCtor();
-        }
+        const AudioContextCtor = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioContextCtor) return;
+        if (!audioContextRef.current) audioContextRef.current = new AudioContextCtor();
         const ctx = audioContextRef.current;
-        if (ctx.state === "suspended") {
-          void ctx.resume();
-        }
+        if (ctx.state === "suspended") void ctx.resume();
 
         const t0 = ctx.currentTime;
-        const oscillator = ctx.createOscillator();
-        const gainNode = ctx.createGain();
-        oscillator.type = "triangle";
-        oscillator.frequency.setValueAtTime(980, t0);
-        oscillator.frequency.exponentialRampToValueAtTime(740, t0 + 0.18);
-        gainNode.gain.setValueAtTime(0.0001, t0);
-        gainNode.gain.exponentialRampToValueAtTime(0.09, t0 + 0.03);
-        gainNode.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
-        oscillator.connect(gainNode);
-        gainNode.connect(ctx.destination);
-        oscillator.start(t0);
-        oscillator.stop(t0 + 0.24);
-        
-        console.log(`[DEBUG] Audio alert played successfully`);
-      } catch (error) {
-        console.log(`[DEBUG] Audio alert failed:`, error);
-        // Ignore autoplay/device audio errors.
-      }
-    }, 0); // Push to next event loop
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(980, t0);
+        osc.frequency.exponentialRampToValueAtTime(740, t0 + 0.18);
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(0.09, t0 + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.22);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(t0);
+        osc.stop(t0 + 0.24);
+      } catch (e) { /* ignore */ }
+    }, 0);
   }, [liveAlerts]);
 
   useEffect(() => {
     return () => {
-      if (audioContextRef.current) {
-        void audioContextRef.current.close();
-      }
+      if (audioContextRef.current) void audioContextRef.current.close();
     };
   }, []);
 
-  // Memoize event formatting to prevent unnecessary recalculations
-  const formatEvent = useCallback((event: string): string => {
-    return event
-      .split("_")
-      .map((chunk) => chunk.charAt(0).toUpperCase() + chunk.slice(1))
-      .join(" ");
+  const formatEvent = useCallback((event: string) => {
+    return event.split("_").map(c => c.charAt(0).toUpperCase() + c.slice(1)).join(" ");
   }, []);
 
-  // Memoize alert item component to prevent unnecessary re-renders
-  const AlertItem = React.memo(({ alert }: { alert: LiveViolationAlert }) => {
-    const handleClick = useCallback(() => {
-      if (alert.alertId) {
-        window.open(`${window.location.origin}/alerts/${alert.alertId}`, "_blank", "noopener,noreferrer");
-      }
-    }, [alert.alertId]);
-
-    return (
-      <div className="pointer-events-auto rounded-xl border border-red-500/25 bg-red-50/95 shadow-xl backdrop-blur px-3 py-2.5 animate-in slide-in-from-right-8 fade-in duration-300">
-        <div className="flex items-start gap-2.5">
-          <div className="mt-0.5 rounded-lg bg-red-100 p-1.5">
-            <AlertTriangle className="w-4 h-4 text-red-700" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-black uppercase tracking-wider text-red-700">New Violation</p>
-            <p className="text-sm font-bold text-red-900 truncate">{formatEvent(alert.event)}</p>
-            <p className="text-[11px] text-red-800/80 mt-0.5">
-              {alert.message}
-            </p>
-            <div className="mt-2 flex justify-end">
-              <button
-                type="button"
-                disabled={!alert.alertId}
-                onClick={handleClick}
-                className={cn(
-                  "text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded transition-colors",
-                  alert.alertId
-                    ? "bg-red-700 text-white hover:bg-red-800"
-                    : "bg-red-100 text-red-400 cursor-not-allowed"
-                )}
-              >
-                View
-              </button>
+  return (
+    <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      {/* Floating Alerts Container */}
+      <div className="fixed right-6 top-24 z-40 w-[320px] pointer-events-none space-y-2">
+        {liveAlerts.map((alert) => (
+          <div key={alert.id} className="pointer-events-auto rounded-xl border border-red-500/25 bg-red-50/95 shadow-xl backdrop-blur px-3 py-2.5 animate-in slide-in-from-right-8 fade-in duration-300">
+            <div className="flex items-start gap-2.5">
+              <div className="mt-0.5 rounded-lg bg-red-100 p-1.5">
+                <AlertTriangle className="w-4 h-4 text-red-700" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-black uppercase tracking-wider text-red-700">New Violation</p>
+                <p className="text-sm font-bold text-red-900 truncate">{formatEvent(alert.event)}</p>
+                <p className="text-[11px] text-red-800/80 mt-0.5 truncate">{alert.message}</p>
+                <div className="mt-2 flex justify-end">
+                  <button
+                    onClick={() => alert.alertId && window.open(`${window.location.origin}/alerts/${alert.alertId}`, "_blank")}
+                    className="text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded bg-red-700 text-white hover:bg-red-800 transition-colors"
+                  >
+                    View
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
-    );
-  });
-
-  AlertItem.displayName = "AlertItem";
-
-  return (
-    <div className="p-8 flex flex-col gap-6 max-w-[1600px] min-h-screen">
-      <div className="fixed right-6 top-24 z-40 w-[320px] pointer-events-none space-y-2">
-        {liveAlerts.map((alert: LiveViolationAlert) => (
-          <AlertItem key={alert.id} alert={alert} />
         ))}
       </div>
 
-      {/* Header */}
+      {/* View Header */}
       <div className="flex justify-between items-end">
-        <div>
+        <div className="flex flex-col gap-1">
+          <button 
+            onClick={onBack}
+            className="text-xs font-bold text-outline hover:text-primary flex items-center gap-1 mb-2 transition-colors"
+          >
+            ← Back to Drivers
+          </button>
           <h2 className="text-3xl font-extrabold tracking-tight text-primary flex items-center gap-3">
-            <Camera className="w-8 h-8" />
-            Live Monitor
+            <Activity className="w-8 h-8 text-red-500" />
+            Monitoring: {selectedDriver.name || selectedDriver.email}
           </h2>
-          <p className="text-secondary text-sm mt-1">
-            Real-time camera feed from ESP32-CAM device
-            <span className="ml-2 font-mono text-xs bg-surface-container px-2 py-0.5 rounded text-primary">
-              {deviceId}
-            </span>
-          </p>
         </div>
         <div className="flex gap-2">
           <button
@@ -761,80 +712,8 @@ export function Monitor({ deviceId }: MonitorProps) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left: Driver List */}
+        {/* Stream Stats */}
         <div className="lg:col-span-3 flex flex-col gap-4">
-          <div className="bg-surface-container-lowest rounded-xl ring-1 ring-outline-variant/15 shadow-sm overflow-hidden">
-            <div className="px-4 py-3 border-b border-surface-container-high bg-surface-container-low/30 flex items-center gap-2">
-              <Users className="w-4 h-4 text-secondary" />
-              <h3 className="text-xs font-bold text-primary uppercase tracking-wider">Drivers</h3>
-              <span className="ml-auto text-[10px] bg-surface-container px-1.5 py-0.5 rounded text-secondary font-bold">
-                {drivers.length}
-              </span>
-            </div>
-            <div className="divide-y divide-surface-container-high max-h-[420px] overflow-y-auto">
-              {driversLoading ? (
-                <div className="p-6 flex flex-col gap-3">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="flex items-center gap-3 animate-pulse">
-                      <div className="w-9 h-9 rounded-full bg-surface-container-high" />
-                      <div className="flex-1 space-y-1.5">
-                        <div className="h-2.5 bg-surface-container-high rounded w-3/4" />
-                        <div className="h-2 bg-surface-container-high rounded w-1/2" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : drivers.length === 0 ? (
-                <div className="p-8 text-center text-xs text-outline">No drivers found</div>
-              ) : (
-                drivers.map((driver) => {
-                  const displayName =
-                    driver.name ||
-                    [driver.name__given, driver.name__family].filter(Boolean).join(" ") ||
-                    driver.email;
-                  const isSelected = selectedDriver?._id === driver._id;
-                  return (
-                    <button
-                      key={driver._id}
-                      onClick={() => setSelectedDriver(isSelected ? null : driver)}
-                      className={cn(
-                        "w-full flex items-center gap-3 px-4 py-3 text-left transition-all",
-                        isSelected
-                          ? "bg-primary/8 border-l-2 border-primary"
-                          : "hover:bg-surface-container-low"
-                      )}
-                    >
-                      {driver.avatar_image_url ? (
-                        <img
-                          src={driver.avatar_image_url}
-                          alt={displayName}
-                          className="w-9 h-9 rounded-full object-cover ring-2 ring-surface-container-high flex-shrink-0"
-                          referrerPolicy="no-referrer"
-                          onError={(e) => {
-                            (e.currentTarget as HTMLImageElement).style.display = "none";
-                          }}
-                        />
-                      ) : (
-                        <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
-                          <span className="text-primary font-bold text-sm">
-                            {displayName.charAt(0).toUpperCase()}
-                          </span>
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className={cn("text-xs font-bold truncate", isSelected ? "text-primary" : "text-on-surface")}>
-                          {displayName}
-                        </p>
-                        <p className="text-[10px] text-secondary truncate">{driver.email}</p>
-                      </div>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          {/* Status card */}
           <div className="bg-surface-container-lowest rounded-xl ring-1 ring-outline-variant/15 shadow-sm p-4 flex flex-col gap-3">
             <h3 className="text-xs font-bold text-primary uppercase tracking-wider flex items-center gap-2">
               <Activity className="w-4 h-4" /> Stream Status
@@ -852,67 +731,37 @@ export function Monitor({ deviceId }: MonitorProps) {
                 <p className="text-xl font-black tabular-nums text-primary">{totalFrames.toLocaleString()}</p>
                 <p className="text-[9px] font-bold text-outline uppercase tracking-wider mt-0.5">Total Frames</p>
               </div>
-              <div className="col-span-2 bg-surface-container-low/50 rounded-lg p-3 text-center">
-                <p className="text-2xl font-black tabular-nums text-emerald-600">{detections.length}</p>
-                <p className="text-[9px] font-bold text-outline uppercase tracking-wider mt-0.5">Detections</p>
-              </div>
             </div>
-            <div className="flex items-center justify-between px-1">
-              <div className="flex items-center gap-2">
-                {isConnected ? (
-                  <Wifi className="w-4 h-4 text-emerald-500" />
-                ) : (
-                  <WifiOff className="w-4 h-4 text-outline/40" />
-                )}
-                <span className="text-xs font-medium text-secondary">
-                  {isConnected ? "WebSocket OK" : "Disconnected"}
+            <div className="space-y-2 mt-2 pt-2 border-t border-surface-container-high">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-outline uppercase">Network</span>
+                <span className={cn("text-[10px] font-black uppercase", isConnected ? "text-emerald-600" : "text-red-500")}>
+                  {isConnected ? "Connected" : "Offline"}
                 </span>
               </div>
-              <div className="flex items-center gap-2">
-                {cameraOnline ? (
-                  <Camera className="w-4 h-4 text-emerald-500" />
-                ) : (
-                  <CameraOff className="w-4 h-4 text-outline/40" />
-                )}
-                <span className="text-xs font-medium text-secondary">
-                  {cameraOnline ? "Camera OK" : "Camera offline"}
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-outline uppercase">Camera</span>
+                <span className={cn("text-[10px] font-black uppercase", cameraOnline ? "text-emerald-600" : "text-red-500")}>
+                  {cameraOnline ? "Online" : "Waiting"}
                 </span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Right: Video + Controls */}
-        <div className="lg:col-span-9 flex flex-col gap-4">
-          {/* Video */}
+        {/* Video Feed */}
+        <div className="lg:col-span-9">
           <div className="bg-surface-container-lowest rounded-xl ring-1 ring-outline-variant/15 shadow-sm overflow-hidden">
             <div className="px-5 py-3.5 border-b border-surface-container-high bg-surface-container-low/30 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <span className="text-xs font-bold text-primary uppercase tracking-wider">
-                  Live Feed
-                </span>
+                <span className="text-xs font-bold text-primary uppercase tracking-wider">Live Feed</span>
                 <EventTimingPanel eventTiming={eventTiming} />
-                {cameraOnline && (
-                  <span className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
-                    <Zap className="w-2.5 h-2.5" /> Streaming
-                  </span>
-                )}
-                {!cameraOnline && isConnected && (
-                  <span className="flex items-center gap-1.5 text-[10px] font-bold text-outline bg-surface-container px-2 py-0.5 rounded">
-                    <ZapOff className="w-2.5 h-2.5" /> Waiting
-                  </span>
-                )}
               </div>
-              {selectedDriver && (
-                <div className="flex items-center gap-2 bg-surface-container px-3 py-1.5 rounded-lg">
-                  <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center text-[10px] font-bold text-primary">
-                    {(selectedDriver.name || selectedDriver.email).charAt(0).toUpperCase()}
-                  </div>
-                  <span className="text-xs font-medium text-on-surface-variant">
-                    {selectedDriver.name || selectedDriver.email}
-                  </span>
-                </div>
-              )}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold text-outline bg-surface-container px-2 py-0.5 rounded font-mono">
+                  {deviceId}
+                </span>
+              </div>
             </div>
             <div className="p-4">
               <LiveCanvas
@@ -924,6 +773,113 @@ export function Monitor({ deviceId }: MonitorProps) {
             </div>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Monitor Screen ──────────────────────────────────────────────────────
+
+interface MonitorProps {
+  deviceId: string;
+}
+
+export function Monitor({ deviceId }: MonitorProps) {
+  const { drivers, loading: driversLoading } = useDrivers();
+  const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
+  const [viewMode, setViewMode] = useState<'list' | 'live'>('list');
+
+  const handleStartMonitoring = (driver: Driver) => {
+    setSelectedDriver(driver);
+    setViewMode('live');
+  };
+
+  if (viewMode === 'live' && selectedDriver) {
+    return (
+      <div className="p-8 max-w-[1600px] min-h-screen">
+        <LiveMonitorView 
+          deviceId={deviceId} 
+          selectedDriver={selectedDriver} 
+          onBack={() => setViewMode('list')} 
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-8 flex flex-col gap-8 max-w-[1600px] min-h-screen">
+      {/* Header */}
+      <div>
+        <h2 className="text-4xl font-black tracking-tight text-primary flex items-center gap-4">
+          <Users className="w-10 h-10 text-primary" />
+          Driver Monitoring
+        </h2>
+        <p className="text-secondary text-sm mt-2 max-w-2xl">
+          Select a driver from the list below to begin real-time monitoring. 
+          The camera stream will only be activated once a specific driver is selected.
+        </p>
+      </div>
+
+      {/* Driver Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        {driversLoading ? (
+          Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="bg-surface-container-lowest rounded-2xl p-6 ring-1 ring-outline-variant/15 animate-pulse flex flex-col gap-4">
+              <div className="w-16 h-16 rounded-full bg-surface-container-high" />
+              <div className="space-y-2">
+                <div className="h-4 bg-surface-container-high rounded w-3/4" />
+                <div className="h-3 bg-surface-container-high rounded w-1/2" />
+              </div>
+              <div className="mt-4 h-10 bg-surface-container-high rounded-xl" />
+            </div>
+          ))
+        ) : drivers.length === 0 ? (
+          <div className="col-span-full py-20 text-center flex flex-col items-center gap-3 bg-surface-container-low rounded-3xl border-2 border-dashed border-outline-variant/30">
+            <Users className="w-12 h-12 text-outline/30" />
+            <p className="text-secondary font-medium">No drivers found in the system.</p>
+          </div>
+        ) : (
+          drivers.map((driver) => {
+            const displayName = driver.name || [driver.name__given, driver.name__family].filter(Boolean).join(" ") || driver.email;
+            return (
+              <div 
+                key={driver._id}
+                className="group bg-surface-container-lowest rounded-2xl p-6 ring-1 ring-outline-variant/15 hover:ring-primary/30 hover:shadow-xl hover:shadow-primary/5 transition-all flex flex-col gap-4"
+              >
+                <div className="flex items-center gap-4">
+                  {driver.avatar_image_url ? (
+                    <img
+                      src={driver.avatar_image_url}
+                      alt={displayName}
+                      className="w-16 h-16 rounded-2xl object-cover ring-4 ring-surface-container-low group-hover:ring-primary/10 transition-all"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-2xl bg-primary/5 flex items-center justify-center text-2xl font-black text-primary">
+                      {displayName.charAt(0).toUpperCase()}
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-on-surface truncate group-hover:text-primary transition-colors">
+                      {displayName}
+                    </h3>
+                    <p className="text-xs text-outline truncate">{driver.email}</p>
+                  </div>
+                </div>
+                
+                <div className="mt-2 pt-4 border-t border-surface-container-high">
+                  <button
+                    onClick={() => handleStartMonitoring(driver)}
+                    className="w-full flex items-center justify-center gap-2 bg-surface-container-high hover:bg-primary hover:text-white text-on-surface-variant font-bold text-sm py-3 rounded-xl transition-all"
+                  >
+                    <Camera className="w-4 h-4" />
+                    View Monitor
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );
