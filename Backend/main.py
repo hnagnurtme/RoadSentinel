@@ -1,17 +1,5 @@
-"""
-main.py
--------
-FastAPI application factory.
+"""FastAPI application factory for RoadSentinel."""
 
-Startup sequence
-----------------
-1. ``lifespan`` loads the YOLO model in a thread pool so the event loop is
-   not blocked during the potentially-long model initialisation.
-2. CORS, static-file serving, and exception handlers are registered.
-3. Routers are mounted under ``/api/v1``.
-4. The ESP32 camera WebSocket is *also* mounted at the legacy path ``/ws/camera``
-   for hardware compatibility (Arduino firmware hardcodes this path).
-"""
 from __future__ import annotations
 
 import asyncio
@@ -33,20 +21,19 @@ from shared.config import settings
 
 logger = logging.getLogger("roadsentinel.main")
 
-# ── Application lifespan ──────────────────────────────────────────────────────
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ARG001
     """Load the AI model at startup (non-blocking)."""
     logger.info("Starting up RoadSentinel backend...")
-    await asyncio.to_thread(inference_engine.load)
+    try:
+        await asyncio.to_thread(inference_engine.load)
+        logger.info("AI model loading completed.")
+    except Exception as e:
+        logger.error(f"AI model loading failed: {e}")
     logger.info("Startup complete.")
     yield
     logger.info("Shutting down RoadSentinel backend.")
-
-
-# ── Application factory ───────────────────────────────────────────────────────
 
 
 def create_app() -> FastAPI:
@@ -57,12 +44,10 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # ── Static files (evidence clips) ─────────────────────────────────────
     evidence_dir = Path(__file__).resolve().parent / "evidence"
     evidence_dir.mkdir(parents=True, exist_ok=True)
     app.mount("/evidence", StaticFiles(directory=str(evidence_dir)), name="evidence")
 
-    # ── Middleware ─────────────────────────────────────────────────────────
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ALLOW_ORIGINS,
@@ -72,12 +57,8 @@ def create_app() -> FastAPI:
     )
     register_exception_handlers(app)
 
-    # ── ESP32 legacy route ─────────────────────────────────────────────────
-    # The Arduino firmware hardcodes WS_PATH = "/ws/camera" so we expose the
-    # handler at that path in addition to the versioned /api/v1/ws/camera.
     app.add_api_websocket_route("/ws/camera", camera_websocket)
 
-    # ── REST + versioned WebSocket ─────────────────────────────────────────
     api_v1 = APIRouter(prefix="/api/v1")
     api_v1.include_router(user_router)
     api_v1.include_router(alert_router)
@@ -85,7 +66,6 @@ def create_app() -> FastAPI:
     api_v1.include_router(websocket_router)
     app.include_router(api_v1)
 
-    # ── Health check ───────────────────────────────────────────────────────
     @app.get("/", tags=["health"])
     async def health_check() -> dict[str, str]:
         return {"status": "ok"}

@@ -9,12 +9,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from infrastructure.db.models.base import DataModel
 
+"""Enum mirrored from the domain layer for SQLAlchemy mapping."""
 
-# NOTE: This enum mirrors ``domain.alert.value_objects.AlertType`` intentionally.
-# SQLAlchemy's ``SAEnum`` requires a Python enum whose identity is tied to the
-# ``metadata`` of this module so it can introspect the pg enum name/schema at
-# DDL time.  Importing the domain enum directly can cause schema-naming
-# conflicts across Alembic migrations.  Keep values in sync with the domain VO.
+
 class AlertType(str, Enum):
     SLEEPING = "SLEEPING"
     USING_PHONE = "USING_PHONE"

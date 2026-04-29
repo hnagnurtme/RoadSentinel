@@ -1,47 +1,41 @@
-"""
-interfaces/api/v1/alert.py
----------------------------
-REST endpoints for the ``Alert`` resource.
+"""REST endpoints for the Alert resource."""
 
-Endpoints:
-  POST   /alerts          — create a new alert
-  GET    /alerts          — list alerts (paginated)
-  GET    /alerts/{id}     — get a single alert
-  DELETE /alerts/{id}     — soft-delete an alert
-"""
 from __future__ import annotations
 
 import uuid
 
 from fastapi import APIRouter, Depends, Query
 
+from application.alert.alert_dto import CreateAlertRequest
 from application.alert.commands.create_alert import CreateAlertCommand
 from application.alert.commands.create_alert_handler import CreateAlertHandler
 from application.alert.commands.delete_alert import DeleteAlertCommand
 from application.alert.commands.delete_alert_handler import DeleteAlertHandler
 from application.alert.queries.get_alert import GetAlertQuery
 from application.alert.queries.get_alert_handler import GetAlertHandler
-from application.alert.queries.list_alerts import ListAlertsQuery
-from application.alert.queries.list_alerts_handler import ListAlertsHandler
-from application.alert.alert_dto import CreateAlertRequest
+from application.alert.queries.list_alerts_overview import ListAlertsOverviewQuery
+from application.alert.queries.list_alerts_overview_handler import (
+    ListAlertsOverviewHandler,
+)
 from infrastructure.repositories.user_repository_impl import UserRepositoryImpl
 from infrastructure.repositories.vehicle_repository_impl import VehicleRepositoryImpl
 from interfaces.api.deps import (
     get_create_alert_handler,
     get_delete_alert_handler,
     get_get_alert_handler,
-    get_list_alerts_handler,
+    get_list_alerts_overview_handler,
     get_user_repository,
     get_vehicle_repository,
 )
 from interfaces.api.response import success_response
-from interfaces.api.v1.mappers import to_alert_response, to_user_response, to_vehicle_response
+from interfaces.api.v1.mappers import (
+    to_alert_response,
+    to_user_response,
+    to_vehicle_response,
+)
 from interfaces.api.v1.websocket import alerts_ws_manager
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
-
-
-# ── Relation resolver ─────────────────────────────────────────────────────────
 
 
 def _resolve_alert_relations(
@@ -49,13 +43,6 @@ def _resolve_alert_relations(
     user_repository: UserRepositoryImpl,
     vehicle_repository: VehicleRepositoryImpl,
 ):
-    """Fetch and map the optional driver and vehicle relations for an alert.
-
-    .. todo::
-        The current implementation issues up to 2 extra DB queries per alert
-        which causes N+1 queries in ``list_alerts``.  This should be replaced
-        with a JOIN query or a batch-fetch in the repository layer.
-    """
     user = None
     vehicle = None
 
@@ -70,9 +57,6 @@ def _resolve_alert_relations(
             vehicle = to_vehicle_response(vehicle_entity)
 
     return user, vehicle
-
-
-# ── Endpoints ─────────────────────────────────────────────────────────────────
 
 
 @router.post("")
@@ -95,7 +79,9 @@ async def create_alert(
         )
     )
     user, vehicle = _resolve_alert_relations(alert, user_repository, vehicle_repository)
-    data = to_alert_response(alert, user=user, vehicle=vehicle).model_dump(by_alias=True)
+    data = to_alert_response(alert, user=user, vehicle=vehicle).model_dump(
+        by_alias=True
+    )
     await alerts_ws_manager.broadcast({"event": "alert.created", "data": data})
     return success_response(data=data)
 
@@ -110,7 +96,9 @@ def get_alert(
     alert = handler.handle(GetAlertQuery(alert_id=alert_id))
     user, vehicle = _resolve_alert_relations(alert, user_repository, vehicle_repository)
     return success_response(
-        data=to_alert_response(alert, user=user, vehicle=vehicle).model_dump(by_alias=True)
+        data=to_alert_response(alert, user=user, vehicle=vehicle).model_dump(
+            by_alias=True
+        )
     )
 
 
@@ -123,7 +111,9 @@ async def delete_alert(
 ):
     alert = handler.handle(DeleteAlertCommand(alert_id=alert_id))
     user, vehicle = _resolve_alert_relations(alert, user_repository, vehicle_repository)
-    data = to_alert_response(alert, user=user, vehicle=vehicle).model_dump(by_alias=True)
+    data = to_alert_response(alert, user=user, vehicle=vehicle).model_dump(
+        by_alias=True
+    )
     await alerts_ws_manager.broadcast({"event": "alert.deleted", "data": data})
     return success_response(data=data)
 
@@ -132,16 +122,16 @@ async def delete_alert(
 def list_alerts(
     limit: int = Query(default=20, ge=1, le=100),
     driver_id: uuid.UUID | None = None,
-    handler: ListAlertsHandler = Depends(get_list_alerts_handler),
-    user_repository: UserRepositoryImpl = Depends(get_user_repository),
-    vehicle_repository: VehicleRepositoryImpl = Depends(get_vehicle_repository),
+    overview_handler: ListAlertsOverviewHandler = Depends(
+        get_list_alerts_overview_handler
+    ),
 ):
-    alerts = handler.handle(ListAlertsQuery(limit=limit, driver_id=driver_id))
-    data = [
-        to_alert_response(
-            alert,
-            *_resolve_alert_relations(alert, user_repository, vehicle_repository),
-        ).model_dump(by_alias=True)
-        for alert in alerts
-    ]
+    """List alerts with pre-joined user and vehicle data using AlertOverviewView.
+
+    This eliminates N+1 queries by using a database view that includes all necessary
+    relations in a single query.
+    """
+    data = overview_handler.handle(
+        ListAlertsOverviewQuery(limit=limit, driver_id=driver_id)
+    )
     return success_response(data=data)

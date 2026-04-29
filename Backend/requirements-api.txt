@@ -1,0 +1,11 @@
+# Core API dependencies only — no AI/CV libs (~150 MB image)
+fastapi==0.116.1
+uvicorn==0.35.0
+SQLAlchemy==2.0.43
+alembic==1.16.5
+pydantic==2.11.9
+pydantic-settings==2.10.1
+PyYAML>=6.0
+python-dotenv==1.1.1
+psycopg2-binary==2.9.10
+cloudinary>=1.41.0

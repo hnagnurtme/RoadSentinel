@@ -11,7 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 try:
     import yaml
-except ImportError:  # pragma: no cover - optional runtime dependency
+except ImportError:  
     yaml = None
 
 load_dotenv()
@@ -185,6 +185,16 @@ class Settings(BaseSettings):
     DRIVER_EVENT_CLOUDINARY_API_KEY: str = ""
     DRIVER_EVENT_CLOUDINARY_API_SECRET: str = ""
     DRIVER_EVENT_CLOUDINARY_FOLDER: str = "roadsentinel/backend"
+
+    DRIVER_EVENT_FALLBACK_DEVICE_ID: uuid.UUID = uuid.UUID(
+        "3fa85f64-5717-4562-b3fc-2c963f66afa6"
+    )
+    DRIVER_EVENT_FALLBACK_DRIVER_ID: uuid.UUID | None = uuid.UUID(
+        "1edc79dd-1331-454e-b64d-12fb8e77f464"
+    )
+    DRIVER_EVENT_FALLBACK_VEHICLE_ID: uuid.UUID | None = uuid.UUID(
+        "0e225dd7-deba-4cfa-91ef-dfa30a3942d1"
+    )
 
     DRIVER_EVENT_ALERT_DEVICE_ID: uuid.UUID = uuid.UUID(
         "3fa85f64-5717-4562-b3fc-2c963f66afa6"
@@ -378,13 +388,13 @@ class Settings(BaseSettings):
     @field_validator("DRIVER_EVENT_PRIORITY", mode="after")
     @classmethod
     def _validate_event_priority(cls, value: list[str]) -> list[str]:
-        allowed = {"sleeping", "using_phone", "distracted"}
+        allowed = {"sleeping", "using_phone", "distracted", "drowsy"}
         priority = [item.strip().lower() for item in value if item and item.strip()]
         if not priority:
             raise ValueError("DRIVER_EVENT_PRIORITY must not be empty")
         if any(event not in allowed for event in priority):
             raise ValueError(
-                "DRIVER_EVENT_PRIORITY only supports: sleeping, using_phone, distracted"
+                "DRIVER_EVENT_PRIORITY only supports: sleeping, using_phone, distracted, drowsy"
             )
         return priority
 
@@ -395,9 +405,7 @@ class Settings(BaseSettings):
             <= self.DRIVER_EVENT_L2_WINDOW_FRAMES
             <= self.DRIVER_EVENT_L3_WINDOW_FRAMES
         ):
-            raise ValueError(
-                "Driver event windows must satisfy L1 <= L2 <= L3"
-            )
+            raise ValueError("Driver event windows must satisfy L1 <= L2 <= L3")
 
         weight_sum = (
             self.DRIVER_EVENT_SCORE_WEIGHT_L1

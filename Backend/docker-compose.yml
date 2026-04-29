@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        WITH_AI: ${WITH_AI:-false}
     image: ${BACKEND_IMAGE:-roadsentinel-backend:local}
     ports:
       - "8000:8000"

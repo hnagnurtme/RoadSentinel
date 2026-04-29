@@ -17,54 +17,88 @@ cors_allow_headers:
   - "*"
 
 driver_event:
-  unknown_enter_frames: 12
 
-  sleep_enter_frames: 2
-  sleep_exit_frames: 1
-  phone_enter_frames: 3
-  phone_exit_frames: 2
-  distracted_enter_frames: 6
-  distracted_exit_frames: 2
-  drowsy_enter_frames: 4
-  drowsy_exit_frames: 2
+  # ── Temporal Reasoning ──────────────────────────────────────────────
+  temporal:
+    tracked_events: [sleeping, drowsy, using_phone, distracted]
+    confidence_gates:
+      sleeping:    0.45
+      drowsy:      0.50
+      using_phone: 0.55
+      distracted:  0.55
+    # EWMA alpha pairs — rise fast / fall slow for critical events
+    alpha_rise:
+      sleeping:    0.50
+      drowsy:      0.30
+      using_phone: 0.40
+      distracted:  0.25
+    alpha_fall:
+      sleeping:    0.10   # very slow release — safety critical
+      drowsy:      0.12
+      using_phone: 0.15
+      distracted:  0.30   # fast release — brief glances are normal
+    dropout:
+      max_hold_seconds: 1.5
+      decay_half_life:  2.0
 
-  phone_decay_miss_frames: 2
-  drowsy_decay_miss_frames: 2
+  # ── State Machine ────────────────────────────────────────────────────
+  state_machine:
+    unknown_enter_seconds: 5.0
+    exit_hold_seconds: 3.0          # prevent rapid state drops
+    priority_order: [sleeping, using_phone, distracted, drowsy]
+    event_enter_thresholds:
+      sleeping:    0.55
+      drowsy:      0.50
+      using_phone: 0.52
+      distracted:  0.48
+    event_exit_thresholds:
+      sleeping:    0.30
+      drowsy:      0.28
+      using_phone:  0.30
+      distracted:  0.25
+    # Seconds in DANGEROUS state before escalating to CRITICAL
+    critical_duration_seconds:
+      sleeping:    5.0    # 5 seconds sleeping = CRITICAL immediately
+      using_phone: 10.0
+      distracted: 20.0
+    drowsy_escalation_seconds: 30.0  # drowsy for 30s → DANGEROUS
 
-  min_sleep_confidence: 0.5
-  min_phone_confidence: 0.6
-  min_distracted_confidence: 0.6
-  min_drowsy_confidence: 0.55
+  # ── Alert Decision ───────────────────────────────────────────────────
+  alert:
+    require_identified_driver: false  # set true in production
+    min_stable_seconds:
+      sleeping:    0.0    # immediate
+      using_phone: 2.0
+      distracted: 3.0
+      drowsy:      5.0
+    cooldown_seconds:
+      sleeping:    60.0
+      using_phone: 45.0
+      distracted: 30.0
+      drowsy:      120.0
 
-  presence_labels:
-    - face
-    - eye
-    - person
-    - driver
+  # ── Evidence ─────────────────────────────────────────────────────────
+  evidence:
+    enabled: true
+    fps: 5
+    pre_event_seconds: 3    # capture onset
+    post_event_seconds: 7   # capture peak + resolution
+    codec: mp4v
+    codec_candidates: [avc1, H264, mp4v]
+    keep_local_after_upload: false
+    # Only save evidence for WARNING and CRITICAL
+    min_severity_for_evidence: WARNING
 
-  priority:
-    - using_phone
-    - sleeping
-    - distracted
-
-  sleeping_release_grace_seconds: 1.5
-  phone_release_grace_seconds: 1.0
-  drowsy_release_grace_seconds: 0.8
-  alert_cooldown_seconds: 3.0
-  phone_min_alert_seconds: 1.5
-  drowsy_min_alert_seconds: 2.0
-  drowsy_escalation_seconds: 10.0
-
-  evidence_enabled: true
-  evidence_seconds: 10
-  evidence_fps: 5
-  evidence_codec: mp4v
-
+  # ── Cloudinary ───────────────────────────────────────────────────────
   cloudinary:
     enabled: true
     cloud_name: dks1edqey
-    folder: roadsentinel/backend
+    folder: roadsentinel/evidence
+    # api_key and api_secret MUST be set in .env — never here
 
-  alert_device_id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
-  alert_driver_id: 1edc79dd-1331-454e-b64d-12fb8e77f464
-  alert_vehicle_id: 0e225dd7-deba-4cfa-91ef-dfa30a3942d1
+  # ── Device / Session ─────────────────────────────────────────────────
+  # These are resolved dynamically from the WebSocket handshake.
+  # The static UUIDs below are ONLY used as fallback in development.
+  fallback_device_id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+  fallback_driver_id: 1edc79dd-1331-454e-b64d-12fb8e77f464   # null = no fallback; require handshake
+  fallback_vehicle_id: 0e225dd7-deba-4cfa-91ef-dfa30a3942d1

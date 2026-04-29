@@ -5,6 +5,9 @@ from application.alert.commands.create_alert_handler import CreateAlertHandler
 from application.alert.commands.delete_alert_handler import DeleteAlertHandler
 from application.alert.queries.get_alert_handler import GetAlertHandler
 from application.alert.queries.list_alerts_handler import ListAlertsHandler
+from application.alert.queries.list_alerts_overview_handler import (
+    ListAlertsOverviewHandler,
+)
 from application.user.commands.create_user_handler import CreateUserHandler
 from application.user.queries.get_user_handler import GetUserHandler
 from application.user.queries.list_users_handler import ListUsersHandler
@@ -69,6 +72,10 @@ def get_list_alerts_handler(
     alert_repository: AlertRepositoryImpl = Depends(get_alert_repository),
 ) -> ListAlertsHandler:
     return ListAlertsHandler(alert_repository)
+
+
+def get_list_alerts_overview_handler() -> ListAlertsOverviewHandler:
+    return ListAlertsOverviewHandler()
 
 
 def get_create_vehicle_handler(
