@@ -185,6 +185,15 @@ class Settings(BaseSettings):
     DRIVER_EVENT_CLOUDINARY_API_KEY: str = ""
     DRIVER_EVENT_CLOUDINARY_API_SECRET: str = ""
     DRIVER_EVENT_CLOUDINARY_FOLDER: str = "roadsentinel/backend"
+    
+    MQTT_ENABLED: bool = True
+    MQTT_BROKER: str = "localhost"
+    MQTT_PORT: int = 1883
+    MQTT_TOPIC_PREFIX: str = "roadsentinel/alerts"
+    MQTT_USERNAME: str | None = None
+    MQTT_PASSWORD: str | None = None
+    MQTT_TLS_ENABLED: bool = False
+    MQTT_RECOVERY_STABLE_SECONDS: float = 3.0
 
     DRIVER_EVENT_FALLBACK_DEVICE_ID: uuid.UUID = uuid.UUID(
         "3fa85f64-5717-4562-b3fc-2c963f66afa6"
@@ -247,6 +256,7 @@ class Settings(BaseSettings):
         "DRIVER_EVENT_PHONE_HOLD_FRAMES",
         "DRIVER_EVENT_DISTRACTED_HOLD_FRAMES",
         "DRIVER_EVENT_DROWSY_HOLD_FRAMES",
+        "MQTT_PORT",
     )
     @classmethod
     def _validate_positive_frames(cls, value: int) -> int:
@@ -290,6 +300,7 @@ class Settings(BaseSettings):
         "DRIVER_EVENT_PHONE_MIN_ALERT_SECONDS",
         "DRIVER_EVENT_DROWSY_MIN_ALERT_SECONDS",
         "DRIVER_EVENT_DROWSY_ESCALATION_SECONDS",
+        "MQTT_RECOVERY_STABLE_SECONDS",
     )
     @classmethod
     def _validate_non_negative_seconds(cls, value: float) -> float:
@@ -333,6 +344,21 @@ class Settings(BaseSettings):
     )
     @classmethod
     def _normalize_cloudinary_strings(cls, value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value.strip()
+        return str(value).strip()
+    
+    @field_validator(
+        "MQTT_BROKER",
+        "MQTT_TOPIC_PREFIX",
+        "MQTT_USERNAME",
+        "MQTT_PASSWORD",
+        mode="before",
+    )
+    @classmethod
+    def _normalize_mqtt_strings(cls, value: Any) -> str:
         if value is None:
             return ""
         if isinstance(value, str):

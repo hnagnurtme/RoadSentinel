@@ -33,6 +33,8 @@ class FrameResult(NamedTuple):
     should_broadcast: bool
     should_save_evidence: bool
     all_events: list[str] = []
+    mqtt_event: str | None = None  # The event name to publish to MQTT
+    mqtt_payload: dict | None = None
 
 
 class CameraFrameProcessor:
@@ -71,6 +73,11 @@ class CameraFrameProcessor:
             "using_phone": self.phone_pipeline,
             "distracted": self.distracted_pipeline,
         }
+
+        # MQTT State tracking
+        self.mqtt_active_event: str | None = None
+        self.mqtt_alert_sent_for: str | None = None
+        self.normal_start_time: float | None = None
 
     def _setup_evidence_pipelines(self) -> None:
         from interfaces.api.v1.websocket import create_save_alert_function
@@ -141,6 +148,49 @@ class CameraFrameProcessor:
 
         self._update_grace_trackers(event, now)
 
+        # MQTT Logic
+        mqtt_event = None
+        mqtt_payload = None
+
+        violation_events = {"sleeping", "using_phone", "distracted", "drowsy"}
+        if event in violation_events:
+            duration = self.event_logic.get_event_duration(event, now)
+            threshold = settings.DRIVER_EVENT_EVIDENCE_SECONDS * 0.66
+            if duration >= threshold and self.mqtt_active_event is None:
+                mqtt_event = event
+                mqtt_payload = {
+                    "event": event,
+                    "confidence": confidence,
+                    "escalated": escalated,
+                    "duration_ms": int(duration * 1000),
+                    "timestamp": now,
+                    "device_id": str(settings.DRIVER_EVENT_FALLBACK_DEVICE_ID),
+                    "driver_id": str(settings.DRIVER_EVENT_FALLBACK_DRIVER_ID),
+                    "vehicle_id": str(settings.DRIVER_EVENT_FALLBACK_VEHICLE_ID),
+                }
+                self.mqtt_alert_sent_for = event
+                self.mqtt_active_event = event
+        elif event == "normal":
+            if self.normal_start_time is None:
+                self.normal_start_time = now
+            
+            normal_duration = now - self.normal_start_time
+            if normal_duration >= settings.MQTT_RECOVERY_STABLE_SECONDS and self.mqtt_active_event is not None:
+                mqtt_event = "normal"
+                mqtt_payload = {
+                    "event": "normal",
+                    "previous_event": self.mqtt_active_event,
+                    "timestamp": now,
+                    "device_id": str(settings.DRIVER_EVENT_FALLBACK_DEVICE_ID),
+                    "driver_id": str(settings.DRIVER_EVENT_FALLBACK_DRIVER_ID),
+                    "vehicle_id": str(settings.DRIVER_EVENT_FALLBACK_VEHICLE_ID),
+                    "stable_duration_ms": int(normal_duration * 1000),
+                }
+                self.mqtt_active_event = None
+                self.mqtt_alert_sent_for = None
+        else:
+            self.normal_start_time = None
+
         self.last_event = event
         if should_broadcast:
             self.last_broadcast_time = now
@@ -162,6 +212,8 @@ class CameraFrameProcessor:
             should_broadcast=should_broadcast,
             should_save_evidence=should_save_evidence,
             all_events=all_active,
+            mqtt_event=mqtt_event,
+            mqtt_payload=mqtt_payload,
         )
 
     def _update_evidence_pipelines(
@@ -280,3 +332,6 @@ class CameraFrameProcessor:
         self.sleep_grace = _GraceTracker(expires_at=0.0)
         self.phone_grace = _GraceTracker(expires_at=0.0)
         self.distracted_grace = _GraceTracker(expires_at=0.0)
+        self.mqtt_active_event = None
+        self.mqtt_alert_sent_for = None
+        self.normal_start_time: float | None = None
