@@ -15,6 +15,7 @@ from application.alert.commands.create_alert_handler import CreateAlertHandler
 from core.ai.evidence_pipeline import DriverEvidencePipeline
 from domain.alert.value_objects import AlertType
 from infrastructure.repositories.alert_repository_impl import AlertRepositoryImpl
+from infrastructure.mqtt import mqtt_client
 from interfaces.api.v1.camera_processor import CameraFrameProcessor
 from shared.config import settings
 
@@ -357,6 +358,13 @@ async def camera_websocket(websocket: WebSocket) -> None:
                         _persist_and_broadcast(pipeline, result.confidence)
                     )
 
+            # MQTT Publishing (Delayed and with 'normal' state)
+            if result.mqtt_event:
+                mqtt_client.publish(
+                    result.mqtt_event,
+                    result.mqtt_payload
+                )
+
             if result.should_broadcast and result.event:
                 last_sent = last_alert_sent_at.get(result.event, 0.0)
                 if now - last_sent >= settings.DRIVER_EVENT_ALERT_COOLDOWN_SECONDS:
@@ -377,6 +385,7 @@ async def camera_websocket(websocket: WebSocket) -> None:
                             }
                         )
                     )
+                    
                     last_alert_sent_at[result.event] = now
 
             if now - t_last_log >= 10.0:
