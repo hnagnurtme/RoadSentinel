@@ -1,3 +1,4 @@
+from passlib.hash import bcrypt
 from application.user.commands.create_user import CreateUserCommand
 from domain.user.entities import UserEntity
 from domain.user.repository import UserRepository
@@ -14,6 +15,10 @@ class CreateUserHandler:
         email = EmailAddress(command.email)
         self.domain_service.ensure_email_available(email)
 
+        password_hash = None
+        if command.password_plain:
+            password_hash = bcrypt.hash(command.password_plain)
+
         user = UserEntity(
             email=email,
             name=command.name,
@@ -29,5 +34,7 @@ class CreateUserHandler:
             address__country=command.address__country,
             address__line1=command.address__line1,
             address__line2=command.address__line2,
+            password_hash=password_hash,
+            role=command.role if command.role in ("admin", "driver") else "driver",
         )
         return self.user_repository.create(user)

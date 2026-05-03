@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Literal
 from datetime import date
 from datetime import datetime
 import uuid
@@ -57,6 +57,8 @@ class CreateUserRequest(BaseModel):
     address__country: OptionalText = None
     address__line1: OptionalText = None
     address__line2: OptionalText = None
+    password: Annotated[str | None, Field(default=None, min_length=8)] = None
+    role: Literal["admin", "driver"] = "driver"
 
 
 class UserResponse(BaseModel):
@@ -80,3 +82,8 @@ class UserResponse(BaseModel):
     created_at: datetime | None = Field(default=None, serialization_alias="_created_at")
     updated_at: datetime | None = Field(default=None, serialization_alias="_updated_at")
     deleted_at: datetime | None = Field(default=None, serialization_alias="_deleted_at")
+    role: str = "driver"
+    
+class LoginRequest(BaseModel):
+    email: EmailText
+    password: str = Field(min_length=1)

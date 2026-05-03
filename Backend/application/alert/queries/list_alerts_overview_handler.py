@@ -85,6 +85,7 @@ class ListAlertsOverviewHandler:
                         "_created_at": getattr(row, 'user__created_at', None),
                         "_updated_at": getattr(row, 'user__updated_at', None),
                         "_deleted_at": getattr(row, 'user__deleted_at', None),
+                        "role": getattr(row, "user__role", None) or "driver",
                     }
                 else:
                     alert_dict["user"] = None

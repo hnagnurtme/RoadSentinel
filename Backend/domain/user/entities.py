@@ -26,3 +26,5 @@ class UserEntity:
     created_at: datetime | None = None
     updated_at: datetime | None = None
     deleted_at: datetime | None = None
+    password_hash: str | None = None
+    role: str = "driver"

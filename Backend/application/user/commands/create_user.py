@@ -18,3 +18,5 @@ class CreateUserCommand:
     address__country: str | None = None
     address__line1: str | None = None
     address__line2: str | None = None
+    password_plain: str | None = None
+    role: str = "driver"
