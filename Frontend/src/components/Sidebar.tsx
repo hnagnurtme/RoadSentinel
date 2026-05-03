@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { LayoutDashboard, Car, Users, AlertTriangle, Settings, HelpCircle, LogOut, Monitor, ChevronDown, ChevronRight, Wifi, WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AppView } from "@/App";
+import { useAuth } from "@/auth/AuthContext";
+import { useNavigate } from "react-router-dom";
 
 interface Device {
   id: string;
@@ -24,7 +26,8 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
   const [devices, setDevices] = useState<Device[]>([
     { id: "esp32-cam", label: "ESP32-CAM", online: false },
   ]);
-
+  const { logout } = useAuth();
+  const navigate = useNavigate();
   // Lightweight status probe: connect to /ws/frontend and listen for pong
   useEffect(() => {
     if (currentView === "monitor") {
@@ -192,12 +195,12 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
                 className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-surface-container-low transition-all w-full text-left group"
               >
                 {device.online ? (
-                  <span className="relative flex h-2 w-2 flex-shrink-0">
+                  <span className="relative flex h-2 w-2 shrink-0">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
                   </span>
                 ) : (
-                  <span className="h-2 w-2 rounded-full bg-outline/40 flex-shrink-0" />
+                  <span className="h-2 w-2 rounded-full bg-outline/40 shrink-0" />
                 )}
                 <div className="flex flex-col min-w-0">
                   <span className="text-xs font-bold text-primary truncate">{device.label}</span>
@@ -236,7 +239,14 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
           <HelpCircle className="w-5 h-5" />
           <span className="text-sm font-medium">Support</span>
         </button>
-        <button className="flex items-center gap-3 px-4 py-2.5 text-secondary hover:bg-surface-container-low rounded transition-all w-full text-left">
+        <button
+          type="button"
+          onClick={() => {
+            logout();
+            navigate("/login", { replace: true });
+          }}
+          className="flex items-center gap-3 px-4 py-2.5 text-secondary hover:bg-surface-container-low rounded transition-all w-full text-left"
+        >
           <LogOut className="w-5 h-5" />
           <span className="text-sm font-medium">Logout</span>
         </button>

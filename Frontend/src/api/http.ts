@@ -1,3 +1,5 @@
+import { getAuthToken } from "@/auth/session";
+
 export interface ApiEnvelope<T> {
   success: boolean;
   message: string;
@@ -25,10 +27,12 @@ export async function requestJson<T>(url: string, options: RequestOptions = {}):
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    const auth = getAuthToken();
     const response = await fetch(url, {
       ...requestInit,
       headers: {
         "Content-Type": "application/json",
+        ...(auth ? { Authorization: `Bearer ${auth}` } : {}),
         ...requestInit.headers,
       },
       signal: controller.signal,

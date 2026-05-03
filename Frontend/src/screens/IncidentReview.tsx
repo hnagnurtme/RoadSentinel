@@ -4,6 +4,8 @@ import { Alert, formatAlertTypeLabel, getAlertSeverity } from "@/types/alert";
 interface IncidentReviewProps {
   alert: Alert | null;
   onNavigate: (view: "dashboard" | "incident" | "alerts") => void;
+  onBack?: () => void;
+  backLabel?: string;
 }
 
 function formatTimestamp(value: string | null): string {
@@ -49,7 +51,9 @@ function initials(name: string): string {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
-export function IncidentReview({ alert, onNavigate }: IncidentReviewProps) {
+export function IncidentReview({ alert, onNavigate, onBack, backLabel }: IncidentReviewProps) {
+  const goBack = () => (onBack ? onBack() : onNavigate("alerts"));
+  const label = backLabel ?? "Back to Alerts";
   if (!alert) {
     return (
       <div className="p-10 max-w-5xl mx-auto space-y-6">
@@ -59,11 +63,11 @@ export function IncidentReview({ alert, onNavigate }: IncidentReviewProps) {
         </div>
         <button
           type="button"
-          onClick={() => onNavigate("alerts")}
+          onClick={goBack}
           className="inline-flex items-center gap-2 bg-primary text-on-primary px-4 py-2 rounded-lg font-semibold"
         >
           <ArrowLeft className="w-4 h-4" />
-          Back To Alerts
+          {label}
         </button>
       </div>
     );
@@ -84,11 +88,11 @@ export function IncidentReview({ alert, onNavigate }: IncidentReviewProps) {
         </div>
         <button
           type="button"
-          onClick={() => onNavigate("alerts")}
+          onClick={goBack}
           className="flex items-center text-primary font-bold text-sm hover:translate-x-[-4px] transition-transform"
         >
           <ArrowLeft className="mr-2 w-5 h-5" />
-          Back to Alerts
+          {label}
         </button>
       </div>
 
