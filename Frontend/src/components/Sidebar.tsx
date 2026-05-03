@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { LayoutDashboard, Car, Users, AlertTriangle, Settings, HelpCircle, LogOut, Monitor, ChevronDown, ChevronRight, Wifi, WifiOff } from "lucide-react";
+import { LayoutDashboard, Car, Users, AlertTriangle, Settings, HelpCircle, LogOut, Monitor, ChevronDown, ChevronRight, Wifi, WifiOff, MessageSquareWarning } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AppView } from "@/App";
 import { useAuth } from "@/auth/AuthContext";
@@ -164,6 +164,18 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
         >
           <AlertTriangle className={cn("w-5 h-5", currentView === "alerts" && "fill-current")} />
           <span className="text-sm">Alerts</span>
+        </button>
+        <button
+          onClick={() => onNavigate("appeals")}
+          className={cn(
+            "flex items-center gap-3 px-4 py-2.5 rounded transition-all w-full text-left",
+            currentView === "appeals"
+              ? "text-primary bg-surface-container font-bold"
+              : "text-secondary hover:bg-surface-container-low font-medium"
+          )}
+        >
+          <MessageSquareWarning className="w-5 h-5" />
+          <span className="text-sm">Appeals</span>
         </button>
 
         {/* ── Monitor nav item ──────────────────────────────────────────── */}

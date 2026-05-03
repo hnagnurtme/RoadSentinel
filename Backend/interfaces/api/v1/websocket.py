@@ -100,6 +100,30 @@ class AlertsWebSocketManager:
             self.disconnect(ws)
 
 
+class AppealsWebSocketManager:
+    """Fan-out broadcast channel for appeal events."""
+
+    def __init__(self) -> None:
+        self._connections: set[WebSocket] = set()
+
+    async def connect(self, websocket: WebSocket) -> None:
+        await websocket.accept()
+        self._connections.add(websocket)
+
+    def disconnect(self, websocket: WebSocket) -> None:
+        self._connections.discard(websocket)
+
+    async def broadcast(self, payload: dict) -> None:
+        stale: list[WebSocket] = []
+        for ws in self._connections:
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                stale.append(ws)
+        for ws in stale:
+            self.disconnect(ws)
+
+
 class CameraManager:
     """Holds the single ESP32-CAM WebSocket connection."""
 
@@ -179,6 +203,7 @@ class FrontendManager:
 
 
 alerts_ws_manager = AlertsWebSocketManager()
+appeals_ws_manager = AppealsWebSocketManager()
 camera_mgr = CameraManager()
 frontend_mgr = FrontendManager()
 
@@ -273,6 +298,18 @@ async def alerts_websocket(websocket: WebSocket) -> None:
         pass
     finally:
         alerts_ws_manager.disconnect(websocket)
+
+
+@router.websocket("/appeals")
+async def appeals_websocket(websocket: WebSocket) -> None:
+    await appeals_ws_manager.connect(websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        appeals_ws_manager.disconnect(websocket)
 
 
 @router.websocket("/camera")

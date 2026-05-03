@@ -1,5 +1,5 @@
 from infrastructure.db.models.base import Base, DataModel, PGView
-from infrastructure.db.models.alert import Alert, AlertOverviewView
+from infrastructure.db.models.alert import Alert, Appeal, AlertOverviewView
 from infrastructure.db.models.user import User, UserOverviewView
 from infrastructure.db.models.vehicle import Vehicle, VehicleOverviewView
 

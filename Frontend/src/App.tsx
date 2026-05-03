@@ -9,6 +9,7 @@ import { Layout } from "@/components/Layout";
 import { Dashboard } from "@/screens/Dashboard";
 import { IncidentReview } from "@/screens/IncidentReview";
 import { Alerts } from "@/screens/Alerts";
+import { AdminAppeals } from "@/screens/AdminAppeals";
 import { Monitor } from "@/screens/Monitor";
 import { Login } from "@/screens/Login";
 import { DriverLayout } from "@/components/DriverLayout";
@@ -20,7 +21,7 @@ import { useAuth } from "@/auth/AuthContext";
 import { Alert } from "@/types/alert";
 import { getAlert } from "@/api/alerts";
 
-export type AppView = "dashboard" | "incident" | "alerts" | "monitor";
+export type AppView = "dashboard" | "incident" | "alerts" | "appeals" | "monitor";
 
 function viewFromPath(pathname: string): AppView {
   if (pathname.startsWith("/monitor")) {
@@ -28,6 +29,9 @@ function viewFromPath(pathname: string): AppView {
   }
   if (pathname.startsWith("/alerts")) {
     return "alerts";
+  }
+  if (pathname.startsWith("/appeals")) {
+    return "appeals";
   }
   return "dashboard";
 }
@@ -61,6 +65,10 @@ function AppShell() {
       } else {
         navigate("/monitor");
       }
+      return;
+    }
+    if (view === "appeals") {
+      navigate("/appeals");
       return;
     }
 
@@ -185,6 +193,7 @@ export default function App() {
           <Route path="/incident/:alertId" element={<LegacyIncidentRedirect />} />
           <Route path="/monitor" element={<MonitorRoute />} />
           <Route path="/monitor/:deviceId" element={<MonitorRoute />} />
+          <Route path="/appeals" element={<AdminAppeals />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Route>
