@@ -10,6 +10,13 @@ import { Dashboard } from "@/screens/Dashboard";
 import { IncidentReview } from "@/screens/IncidentReview";
 import { Alerts } from "@/screens/Alerts";
 import { Monitor } from "@/screens/Monitor";
+import { Login } from "@/screens/Login";
+import { DriverLayout } from "@/components/DriverLayout";
+import { DriverPortal } from "@/screens/DriverPortal";
+import { DriverViolations } from "@/screens/DriverViolations";
+import { DriverIncidentRoute } from "@/screens/DriverIncidentRoute";
+import { RequireRole } from "@/auth/RequireRole";
+import { useAuth } from "@/auth/AuthContext";
 import { Alert } from "@/types/alert";
 import { getAlert } from "@/api/alerts";
 
@@ -23,6 +30,14 @@ function viewFromPath(pathname: string): AppView {
     return "alerts";
   }
   return "dashboard";
+}
+
+function RootRedirect() {
+  const { user } = useAuth();
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+  return <Navigate to={user.role === "admin" ? "/dashboard" : "/driver"} replace />;
 }
 
 function AppShell() {
@@ -49,7 +64,6 @@ function AppShell() {
       return;
     }
 
-    // Incident always requires alert id, redirect to alerts when id is unknown.
     navigate("/alerts");
   };
 
@@ -159,16 +173,32 @@ function LegacyIncidentRedirect() {
 export default function App() {
   return (
     <Routes>
-      <Route element={<AppShell />}>
-        <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route path="/dashboard" element={<DashboardRoute />} />
-        <Route path="/alerts" element={<AlertsRoute />} />
-        <Route path="/alerts/:alertId" element={<IncidentRoute />} />
-        <Route path="/incident/:alertId" element={<LegacyIncidentRedirect />} />
-        <Route path="/monitor" element={<MonitorRoute />} />
-        <Route path="/monitor/:deviceId" element={<MonitorRoute />} />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/" element={<RootRedirect />} />
+
+      <Route element={<RequireRole role="admin" />}>
+        <Route element={<AppShell />}>
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard" element={<DashboardRoute />} />
+          <Route path="/alerts" element={<AlertsRoute />} />
+          <Route path="/alerts/:alertId" element={<IncidentRoute />} />
+          <Route path="/incident/:alertId" element={<LegacyIncidentRedirect />} />
+          <Route path="/monitor" element={<MonitorRoute />} />
+          <Route path="/monitor/:deviceId" element={<MonitorRoute />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Route>
       </Route>
+
+      <Route element={<RequireRole role="driver" />}>
+        <Route element={<DriverLayout />}>
+          <Route path="/driver" element={<DriverPortal />} />
+          <Route path="/driver/violations" element={<DriverViolations />} />
+          <Route path="/driver/violations/:alertId" element={<DriverIncidentRoute />} />
+          <Route path="*" element={<Navigate to="/driver" replace />} />
+        </Route>
+      </Route>
+
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
