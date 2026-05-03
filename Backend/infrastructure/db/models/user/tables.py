@@ -24,3 +24,5 @@ class User(DataModel):
     address__country: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     address__line1: Mapped[Optional[str]] = mapped_column(String, nullable=True)
     address__line2: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    password_hash: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    role: Mapped[str] = mapped_column(String(32), nullable=False, default="driver")

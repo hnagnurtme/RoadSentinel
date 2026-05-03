@@ -100,7 +100,12 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/roadsentinel"
     SQL_ECHO: bool = False
 
-    CORS_ALLOW_ORIGINS: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    CORS_ALLOW_ORIGINS: list[str] = [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
     CORS_ALLOW_CREDENTIALS: bool = True
     CORS_ALLOW_METHODS: list[str] = ["*"]
     CORS_ALLOW_HEADERS: list[str] = ["*"]
@@ -214,6 +219,10 @@ class Settings(BaseSettings):
     DRIVER_EVENT_ALERT_VEHICLE_ID: uuid.UUID | None = uuid.UUID(
         "0e225dd7-deba-4cfa-91ef-dfa30a3942d1"
     )
+    
+    JWT_SECRET_KEY: str = "roadsentinel-dev-change-me"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_MINUTES: int = 60 * 24 # 
 
     @classmethod
     def _split_csv(cls, value: Any) -> list[str]:

@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from core.ai.engine import inference_engine
 from interfaces.api.middleware.exception import register_exception_handlers
 from interfaces.api.v1.alert import router as alert_router
+from interfaces.api.v1.auth import router as auth_router
 from interfaces.api.v1.user import router as user_router
 from interfaces.api.v1.vehicle import router as vehicle_router
 from interfaces.api.v1.websocket import camera_websocket, router as websocket_router
@@ -64,6 +65,7 @@ def create_app() -> FastAPI:
     api_v1.include_router(alert_router)
     api_v1.include_router(vehicle_router)
     api_v1.include_router(websocket_router)
+    api_v1.include_router(auth_router)
     app.include_router(api_v1)
 
     @app.get("/", tags=["health"])

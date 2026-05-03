@@ -33,6 +33,8 @@ class UserRepositoryImpl(UserRepository):
             created_at=row._created_at,
             updated_at=row._updated_at,
             deleted_at=row._deleted_at,
+            password_hash=row.password_hash,
+            role=row.role or "driver",
         )
 
     def create(self, user: UserEntity) -> UserEntity:
@@ -51,6 +53,8 @@ class UserRepositoryImpl(UserRepository):
             address__country=user.address__country,
             address__line1=user.address__line1,
             address__line2=user.address__line2,
+            password_hash=user.password_hash,
+            role=user.role,
         )
         self.db.add(row)
         self.db.commit()

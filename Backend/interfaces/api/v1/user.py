@@ -28,6 +28,7 @@ from interfaces.api.deps import (
 )
 from interfaces.api.response import success_response
 from interfaces.api.v1.mappers import to_user_response
+from interfaces.api.auth_dependencies import AuthTokenPayload, require_auth_payload
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -53,8 +54,19 @@ def create_user(
             address__country=payload.address__country,
             address__line1=payload.address__line1,
             address__line2=payload.address__line2,
+            password_plain=payload.password,
+            role=payload.role,
         )
     )
+    return success_response(data=to_user_response(user).model_dump(by_alias=True))
+
+
+@router.get("/me")
+def get_me(
+    auth: AuthTokenPayload = Depends(require_auth_payload),
+    handler: GetUserHandler = Depends(get_get_user_handler),
+):
+    user = handler.handle(GetUserQuery(user_id=auth.user_id))
     return success_response(data=to_user_response(user).model_dump(by_alias=True))
 
 

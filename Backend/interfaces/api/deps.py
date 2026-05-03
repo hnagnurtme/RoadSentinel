@@ -19,6 +19,8 @@ from infrastructure.repositories.alert_repository_impl import AlertRepositoryImp
 from infrastructure.repositories.user_repository_impl import UserRepositoryImpl
 from infrastructure.repositories.vehicle_repository_impl import VehicleRepositoryImpl
 
+from application.auth.login_handler import LoginHandler
+
 
 def get_user_repository(db: Session = Depends(get_db)) -> UserRepositoryImpl:
     return UserRepositoryImpl(db)
@@ -84,7 +86,7 @@ def get_create_vehicle_handler(
     return CreateVehicleHandler(vehicle_repository)
 
 
-def get_get_vehicle_handler(
+def get_get_vehicle_handler(  
     vehicle_repository: VehicleRepositoryImpl = Depends(get_vehicle_repository),
 ) -> GetVehicleHandler:
     return GetVehicleHandler(vehicle_repository)
@@ -94,3 +96,8 @@ def get_list_vehicles_handler(
     vehicle_repository: VehicleRepositoryImpl = Depends(get_vehicle_repository),
 ) -> ListVehiclesHandler:
     return ListVehiclesHandler(vehicle_repository)
+
+def get_login_handler(
+    user_repository: UserRepositoryImpl = Depends(get_user_repository),
+) -> LoginHandler:
+    return LoginHandler(user_repository)

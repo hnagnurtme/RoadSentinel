@@ -1,10 +1,47 @@
-from infrastructure.db.models.base import PGView
+"""user password_hash, role + alert overview user__role
+
+Revision ID: f8c2_user_auth_view
+Revises: 22d72a301c78
+Create Date: 2026-05-03
+"""
+from alembic import op
+import sqlalchemy as sa
+
+from infrastructure.db.models.alert.views import AlertOverviewView
+
+revision = "f8c2_user_auth_view"
+down_revision = "22d72a301c78"
+branch_labels = None
+depends_on = None
 
 
-class AlertOverviewView(PGView):
-    schema = "alert"
-    name = "_alert_overview"
-    query = """
+def upgrade() -> None:
+    op.add_column(
+        "user",
+        sa.Column("password_hash", sa.String(), nullable=True),
+        schema="user",
+    )
+    op.add_column(
+        "user",
+        sa.Column(
+            "role",
+            sa.String(length=32),
+            nullable=False,
+            server_default="driver",
+        ),
+        schema="user",
+    )
+
+    op.execute(sa.text('DROP VIEW IF EXISTS alert."_alert_overview"'))
+    op.execute(
+        sa.text(f'CREATE VIEW alert."_alert_overview" AS {AlertOverviewView.query}')
+    )
+
+
+def downgrade() -> None:
+    op.execute(sa.text('DROP VIEW IF EXISTS alert."_alert_overview"'))
+
+    _legacy_overview = """
     SELECT
         a._id,
         a.message,
@@ -33,7 +70,6 @@ class AlertOverviewView(PGView):
         u._created_at AS user__created_at,
         u._updated_at AS user__updated_at,
         u._deleted_at AS user__deleted_at,
-        u.role AS user__role,
         v._id AS vehicle__id,
         v.plate_number AS vehicle__plate_number,
         v.manufacturer AS vehicle__manufacturer,
@@ -53,3 +89,7 @@ class AlertOverviewView(PGView):
     LEFT JOIN "user"."user" u ON u._id = a.driver_id
     LEFT JOIN "vehicle"."vehicle" v ON v._id = a.vehicle_id
     """
+    op.execute(sa.text(f'CREATE VIEW alert."_alert_overview" AS {_legacy_overview}'))
+
+    op.drop_column("user", "role", schema="user")
+    op.drop_column("user", "password_hash", schema="user")

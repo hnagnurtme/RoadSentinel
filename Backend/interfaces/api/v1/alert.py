@@ -35,6 +35,9 @@ from interfaces.api.v1.mappers import (
 )
 from interfaces.api.v1.websocket import alerts_ws_manager
 
+from interfaces.api.auth_dependencies import AuthTokenPayload, get_optional_auth_payload
+from shared.exceptions import ForbiddenException
+
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
 
@@ -86,14 +89,37 @@ async def create_alert(
     return success_response(data=data)
 
 
+@router.get("")
+def list_alerts(
+    limit: int = Query(default=20, ge=1, le=100),
+    driver_id: uuid.UUID | None = None,
+    overview_handler: ListAlertsOverviewHandler = Depends(
+        get_list_alerts_overview_handler
+    ),
+    auth: AuthTokenPayload | None = Depends(get_optional_auth_payload),
+):
+    effective_driver_id = driver_id
+    if auth is not None and auth.role == "driver":
+        effective_driver_id = auth.user_id
+
+    data = overview_handler.handle(
+        ListAlertsOverviewQuery(limit=limit, driver_id=effective_driver_id)
+    )
+    return success_response(data=data)
+
+
 @router.get("/{alert_id}")
 def get_alert(
     alert_id: uuid.UUID,
     handler: GetAlertHandler = Depends(get_get_alert_handler),
     user_repository: UserRepositoryImpl = Depends(get_user_repository),
     vehicle_repository: VehicleRepositoryImpl = Depends(get_vehicle_repository),
+    auth: AuthTokenPayload | None = Depends(get_optional_auth_payload),
 ):
     alert = handler.handle(GetAlertQuery(alert_id=alert_id))
+    if auth is not None and auth.role == "driver":
+        if alert.driver_id != auth.user_id:
+            raise ForbiddenException("Access denied")
     user, vehicle = _resolve_alert_relations(alert, user_repository, vehicle_repository)
     return success_response(
         data=to_alert_response(alert, user=user, vehicle=vehicle).model_dump(
@@ -115,23 +141,4 @@ async def delete_alert(
         by_alias=True
     )
     await alerts_ws_manager.broadcast({"event": "alert.deleted", "data": data})
-    return success_response(data=data)
-
-
-@router.get("")
-def list_alerts(
-    limit: int = Query(default=20, ge=1, le=100),
-    driver_id: uuid.UUID | None = None,
-    overview_handler: ListAlertsOverviewHandler = Depends(
-        get_list_alerts_overview_handler
-    ),
-):
-    """List alerts with pre-joined user and vehicle data using AlertOverviewView.
-
-    This eliminates N+1 queries by using a database view that includes all necessary
-    relations in a single query.
-    """
-    data = overview_handler.handle(
-        ListAlertsOverviewQuery(limit=limit, driver_id=driver_id)
-    )
     return success_response(data=data)
