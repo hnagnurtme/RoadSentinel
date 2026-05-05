@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 from infrastructure.db.models import Base
@@ -20,6 +20,11 @@ SessionLocal = sessionmaker(
 
 
 def init_db():
+    schemas = {table.schema for table in Base.metadata.tables.values() if table.schema}
+    with engine.begin() as conn:
+        for schema in schemas:
+            conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{schema}"'))
+    
     Base.metadata.create_all(bind=engine)
 
 
