@@ -20,11 +20,11 @@
 #include <freertos/queue.h>
 
 // ─── Wi-Fi credentials ────────────────────────────────────────────────────────
-static const char* WIFI_SSID = "ITF Da Nang";
-static const char* WIFI_PASS = "itfdanang";
+static const char* WIFI_SSID = "37 Ngo Van So";
+static const char* WIFI_PASS = "987654321";
 
 // ─── Server ───────────────────────────────────────────────────────────────────
-static const char*    WS_HOST = "172.31.98.3";
+static const char*    WS_HOST = "192.168.1.188";
 static const uint16_t WS_PORT = 8000;
 static const char*    WS_PATH = "/ws/camera";
 

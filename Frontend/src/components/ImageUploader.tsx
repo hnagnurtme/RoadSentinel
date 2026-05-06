@@ -1,13 +1,12 @@
 import React, { useState, useRef } from "react";
 import { UploadCloud, Image as ImageIcon, X, Loader2 } from "lucide-react";
+import { env } from "@/config/env";
 
 interface ImageUploaderProps {
   onUploadSuccess: (url: string) => void;
   currentUrl?: string;
   label?: string;
 }
-
-import { env } from "@/config/env";
 
 // Reliable pure JS SHA-1 implementation
 function sha1(str: string): string {
