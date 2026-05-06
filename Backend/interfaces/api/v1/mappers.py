@@ -36,6 +36,7 @@ def to_user_response(user) -> UserResponse:
         updated_at=user.updated_at,
         deleted_at=user.deleted_at,
         role=user.role,
+        fingerprint_id=getattr(user, "fingerprint_id", None),
     )
 
 

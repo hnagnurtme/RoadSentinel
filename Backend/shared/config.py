@@ -11,7 +11,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 try:
     import yaml
-except ImportError:  
+except ImportError:
     yaml = None
 
 load_dotenv()
@@ -190,7 +190,7 @@ class Settings(BaseSettings):
     DRIVER_EVENT_CLOUDINARY_API_KEY: str = ""
     DRIVER_EVENT_CLOUDINARY_API_SECRET: str = ""
     DRIVER_EVENT_CLOUDINARY_FOLDER: str = "roadsentinel/backend"
-    
+
     MQTT_ENABLED: bool = True
     MQTT_BROKER: str = "localhost"
     MQTT_PORT: int = 1883
@@ -204,7 +204,7 @@ class Settings(BaseSettings):
         "3fa85f64-5717-4562-b3fc-2c963f66afa6"
     )
     DRIVER_EVENT_FALLBACK_DRIVER_ID: uuid.UUID | None = uuid.UUID(
-        "1edc79dd-1331-454e-b64d-12fb8e77f464"
+        "c8307945-4ac3-4877-bc7c-067c5aca27cb"
     )
     DRIVER_EVENT_FALLBACK_VEHICLE_ID: uuid.UUID | None = uuid.UUID(
         "0e225dd7-deba-4cfa-91ef-dfa30a3942d1"
@@ -214,15 +214,15 @@ class Settings(BaseSettings):
         "3fa85f64-5717-4562-b3fc-2c963f66afa6"
     )
     DRIVER_EVENT_ALERT_DRIVER_ID: uuid.UUID | None = uuid.UUID(
-        "1edc79dd-1331-454e-b64d-12fb8e77f464"
+        "c8307945-4ac3-4877-bc7c-067c5aca27cb"
     )
     DRIVER_EVENT_ALERT_VEHICLE_ID: uuid.UUID | None = uuid.UUID(
         "0e225dd7-deba-4cfa-91ef-dfa30a3942d1"
     )
-    
+
     JWT_SECRET_KEY: str = "roadsentinel-dev-change-me"
     JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRE_MINUTES: int = 60 * 24 # 
+    JWT_EXPIRE_MINUTES: int = 60 * 24  #
 
     @classmethod
     def _split_csv(cls, value: Any) -> list[str]:
@@ -358,7 +358,7 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return value.strip()
         return str(value).strip()
-    
+
     @field_validator(
         "MQTT_BROKER",
         "MQTT_TOPIC_PREFIX",

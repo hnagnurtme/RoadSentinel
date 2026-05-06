@@ -20,19 +20,19 @@
 #include <freertos/queue.h>
 
 // ─── Wi-Fi credentials ────────────────────────────────────────────────────────
-static const char* WIFI_SSID = "ITF Da Nang";
-static const char* WIFI_PASS = "itfdanang";
+static const char* WIFI_SSID = "37 Ngo Van So";
+static const char* WIFI_PASS = "987654321";
 
 // ─── Server ───────────────────────────────────────────────────────────────────
-static const char*    WS_HOST = "172.31.98.3";
+static const char*    WS_HOST = "192.168.1.188";
 static const uint16_t WS_PORT = 8000;
 static const char*    WS_PATH = "/ws/camera";
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 // Ưu tiên chất lượng ảnh hơn tốc độ
-static const framesize_t FRAME_SIZE        = FRAMESIZE_VGA;    // 640×480
-static const int         JPEG_QUALITY      = 10;               // 0=best, 63=worst
-static const uint32_t    CAPTURE_INTERVAL_MS = 120;            // ~8.3 fps target
+static const framesize_t FRAME_SIZE        = FRAMESIZE_HVGA;   // 480x320 (Giảm độ phân giải để tránh nghẽn mạng gây delay)
+static const int         JPEG_QUALITY      = 15;               // Tăng số = giảm dung lượng ảnh (ảnh nhẹ gửi nhanh hơn)
+static const uint32_t    CAPTURE_INTERVAL_MS = 40;             // ~25 fps target (thực tế và ổn định hơn)
 
 // Queue depth: 2 frame là đủ (double-buffer). Tăng lên 3 nếu WiFi jitter cao.
 static const int QUEUE_DEPTH = 2;
@@ -205,8 +205,8 @@ static bool init_camera() {
         s->set_saturation(s,     0);
         s->set_sharpness(s,      0);   // sharp=0 → ít xử lý hơn
         s->set_denoise(s,        0);   // denoise off → nhanh hơn
-        s->set_hmirror(s,        1);   // lật ảnh theo trục ngang (trái <-> phải)
-        s->set_vflip(s,          1);   // lật ảnh theo trục dọc (trên <-> dưới)
+        s->set_hmirror(s,        0);   // lật ảnh theo trục ngang (trái <-> phải)
+        s->set_vflip(s,          0);   // lật ảnh theo trục dọc (trên <-> dưới)
     }
 
     Serial.printf("[CAM] Init OK — PSRAM: %s\n", psramFound() ? "yes" : "no");
@@ -295,10 +295,17 @@ static void captureTaskCorrect(void* arg) {
             continue;
         }
 
-        // Enqueue — nếu queue đầy thì DROP (không block)
+        // Enqueue — nếu queue đầy thì BỎ FRAME CŨ NHẤT để luôn ưu tiên frame mới -> Chống delay cực lớn
         if (xQueueSend(frame_queue, &msg, 0) != pdTRUE) {
-            free(msg.data);  // giải phóng ngay nếu không enqueue được
-            stat_dropped++;
+            FrameMsg old_msg;
+            if (xQueueReceive(frame_queue, &old_msg, 0) == pdTRUE) {
+                free(old_msg.data); // xóa frame cũ
+                stat_dropped++;
+                xQueueSend(frame_queue, &msg, 0); // đẩy frame mới nhất vào
+            } else {
+                free(msg.data);
+                stat_dropped++;
+            }
         }
     }
 }
@@ -324,6 +331,14 @@ static void wsTask(void* arg) {
 
         // Lấy frame từ queue, timeout ngắn để ws.loop() không bị bỏ đói
         if (xQueueReceive(frame_queue, &msg, pdMS_TO_TICKS(5)) == pdTRUE) {
+            // Xả sạch queue để CHỈ gửi frame MỚI NHẤT, bỏ các frame dồn ứ -> Triệt tiêu delay
+            FrameMsg next_msg;
+            while (xQueueReceive(frame_queue, &next_msg, 0) == pdTRUE) {
+                free(msg.data);
+                msg = next_msg;
+                stat_dropped++;
+            }
+
             if (ws_connected) {
                 bool ok = ws.sendBIN(msg.data, msg.len);
                 if (ok) {

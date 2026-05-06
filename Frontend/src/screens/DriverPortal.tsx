@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
-import { CalendarDays, Mail, MapPin, UserRound } from "lucide-react";
+import React, { useEffect, useState } from "react";
+import { CalendarDays, Mail, MapPin, UserRound, Edit2, X } from "lucide-react";
 import { env } from "@/config/env";
 import { useAuth } from "@/auth/AuthContext";
 import { DriverHeader } from "@/components/DriverHeader";
+import { ImageUploader } from "@/components/ImageUploader";
 import type { UserProfile } from "@/types/user";
 import { mapUserFromApi } from "@/types/user";
 import type { ApiEnvelope } from "@/api/http";
+import { updateUser } from "@/api/users";
 
 function displayName(u: UserProfile): string {
   const n = [u.name__given, u.name__family].filter(Boolean).join(" ");
@@ -16,10 +18,20 @@ export function DriverPortal() {
   const { token } = useAuth();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
+  
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editGivenName, setEditGivenName] = useState("");
+  const [editFamilyName, setEditFamilyName] = useState("");
+  const [editAvatar, setEditAvatar] = useState("");
+  const [editBirthday, setEditBirthday] = useState("");
+  const [editGender, setEditGender] = useState("");
+  const [editCity, setEditCity] = useState("");
+  const [editCountry, setEditCountry] = useState("");
+  const [editAddressLine1, setEditAddressLine1] = useState("");
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
 
-  useEffect(() => {
+  const fetchProfile = () => {
     if (!token) return;
-    let cancelled = false;
     fetch(`${env.apiBaseUrl}/users/me`, {
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -29,15 +41,49 @@ export function DriverPortal() {
         return mapUserFromApi(j.data);
       })
       .then((p) => {
-        if (!cancelled) setProfile(p);
+        setProfile(p);
+        setEditGivenName(p.name__given || "");
+        setEditFamilyName(p.name__family || "");
+        setEditAvatar(p.avatar_image_url || "");
+        setEditBirthday(p.birthday || "");
+        setEditGender(p.gender || "");
+        setEditCity(p.address__city || "");
+        setEditCountry(p.address__country || "");
+        setEditAddressLine1(p.address__line1 || "");
       })
       .catch((e: Error) => {
-        if (!cancelled) setError(e.message);
+        setError(e.message);
       });
-    return () => {
-      cancelled = true;
-    };
+  };
+
+  useEffect(() => {
+    fetchProfile();
   }, [token]);
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!profile) return;
+    setIsSavingProfile(true);
+    try {
+      await updateUser(profile.id, {
+        name__given: editGivenName || null,
+        name__family: editFamilyName || null,
+        avatar_image_url: editAvatar || null,
+        birthday: editBirthday || null,
+        gender: editGender || null,
+        address__city: editCity || null,
+        address__country: editCountry || null,
+        address__line1: editAddressLine1 || null,
+      });
+      setIsEditModalOpen(false);
+      fetchProfile();
+    } catch (err) {
+      console.error("Failed to update profile", err);
+      alert("Failed to update profile.");
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
 
   return (
     <>
@@ -61,7 +107,24 @@ export function DriverPortal() {
 
         {profile && (
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            <section className="lg:col-span-8 bg-surface-container-lowest p-6 rounded-xl ring-1 ring-outline-variant/15 shadow-sm space-y-4">
+            <section className="lg:col-span-8 bg-surface-container-lowest p-6 rounded-xl ring-1 ring-outline-variant/15 shadow-sm space-y-4 relative">
+              <button
+                onClick={() => {
+                  setEditGivenName(profile.name__given || "");
+                  setEditFamilyName(profile.name__family || "");
+                  setEditAvatar(profile.avatar_image_url || "");
+                  setEditBirthday(profile.birthday || "");
+                  setEditGender(profile.gender || "");
+                  setEditCity(profile.address__city || "");
+                  setEditCountry(profile.address__country || "");
+                  setEditAddressLine1(profile.address__line1 || "");
+                  setIsEditModalOpen(true);
+                }}
+                className="absolute top-6 right-6 p-2 rounded-lg bg-surface-container text-secondary hover:text-primary transition-colors flex items-center gap-2 text-sm font-semibold pr-3"
+                title="Edit Profile"
+              >
+                <Edit2 className="w-4 h-4" /> Edit
+              </button>
               <div className="flex items-start gap-6">
                 {profile.avatar_image_url ? (
                   <img
@@ -74,7 +137,7 @@ export function DriverPortal() {
                     {displayName(profile).slice(0, 2).toUpperCase()}
                   </div>
                 )}
-                <div className="min-w-0">
+                <div className="min-w-0 pr-24">
                   <h3 className="text-2xl font-black text-primary truncate">{displayName(profile)}</h3>
                   <p className="text-sm text-secondary flex items-center gap-2 mt-2">
                     <Mail className="w-4 h-4 shrink-0" />
@@ -122,6 +185,129 @@ export function DriverPortal() {
           </div>
         )}
       </div>
+
+      {/* Edit Profile Modal */}
+      {isEditModalOpen && profile && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-surface-container-lowest rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between p-6 border-b border-surface-container-high shrink-0">
+              <h2 className="text-xl font-bold">Edit Profile</h2>
+              <button onClick={() => setIsEditModalOpen(false)} className="p-2 hover:bg-surface-container-low rounded-full">
+                <X className="w-5 h-5 text-secondary" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveProfile} className="p-6 flex flex-col gap-6 overflow-y-auto">
+              <div className="flex flex-col md:flex-row gap-6">
+                <div className="w-full md:w-48 shrink-0 flex flex-col">
+                  <ImageUploader 
+                    label="Avatar Image" 
+                    currentUrl={editAvatar} 
+                    onUploadSuccess={(url) => setEditAvatar(url)} 
+                  />
+                </div>
+                <div className="flex-1 flex flex-col gap-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-bold text-secondary">Given Name</label>
+                      <input
+                        type="text"
+                        value={editGivenName}
+                        onChange={e => setEditGivenName(e.target.value)}
+                        className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
+                        placeholder="John"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-bold text-secondary">Family Name</label>
+                      <input
+                        type="text"
+                        value={editFamilyName}
+                        onChange={e => setEditFamilyName(e.target.value)}
+                        className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
+                        placeholder="Doe"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-bold text-secondary">Date of Birth</label>
+                      <input
+                        type="date"
+                        value={editBirthday}
+                        onChange={e => setEditBirthday(e.target.value)}
+                        className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-bold text-secondary">Gender</label>
+                      <select
+                        value={editGender}
+                        onChange={e => setEditGender(e.target.value)}
+                        className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
+                      >
+                        <option value="">Select Gender</option>
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-bold text-secondary">City</label>
+                      <input
+                        type="text"
+                        value={editCity}
+                        onChange={e => setEditCity(e.target.value)}
+                        className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
+                        placeholder="Da Nang"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-bold text-secondary">Country</label>
+                      <input
+                        type="text"
+                        value={editCountry}
+                        onChange={e => setEditCountry(e.target.value)}
+                        className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
+                        placeholder="Vietnam"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4">
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-bold text-secondary">Address Line 1</label>
+                      <input
+                        type="text"
+                        value={editAddressLine1}
+                        onChange={e => setEditAddressLine1(e.target.value)}
+                        className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
+                        placeholder="123 Example St"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 mt-2 pt-4 border-t border-surface-container-high">
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="px-4 py-2 rounded-lg font-bold text-secondary hover:bg-surface-container-high"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingProfile}
+                  className="px-4 py-2 rounded-lg font-bold bg-primary text-on-primary hover:opacity-90 disabled:opacity-50"
+                >
+                  {isSavingProfile ? "Saving..." : "Save Profile"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }

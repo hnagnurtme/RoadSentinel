@@ -1,9 +1,13 @@
 import { useState, useEffect } from "react";
-import { LayoutDashboard, Car, Users, AlertTriangle, Settings, HelpCircle, LogOut, Monitor, ChevronDown, ChevronRight, Wifi, WifiOff, MessageSquareWarning } from "lucide-react";
+import { LayoutDashboard, Car, Users, AlertTriangle, Settings, HelpCircle, LogOut, Monitor, ChevronDown, ChevronRight, Wifi, WifiOff, MessageSquareWarning, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AppView } from "@/App";
 import { useAuth } from "@/auth/AuthContext";
 import { useNavigate } from "react-router-dom";
+import { getVehicles } from "@/api/vehicles";
+import type { Vehicle } from "@/types/vehicle";
+
+import { Logo } from "@/components/Logo";
 
 interface Device {
   id: string;
@@ -23,6 +27,8 @@ const WS_BASE = (import.meta.env.VITE_WS_ALERTS_URL as string | undefined)
 
 export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps) {
   const [monitorOpen, setMonitorOpen] = useState(false);
+  const [vehiclesOpen, setVehiclesOpen] = useState(false);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [devices, setDevices] = useState<Device[]>([
     { id: "esp32-cam", label: "ESP32-CAM", online: false },
   ]);
@@ -33,7 +39,16 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
     if (currentView === "monitor") {
       setMonitorOpen(true);
     }
+    if (currentView === "vehicles") {
+      setVehiclesOpen(true);
+    }
   }, [currentView]);
+
+  useEffect(() => {
+    if (vehiclesOpen && vehicles.length === 0) {
+      getVehicles(10).then(setVehicles).catch(() => {});
+    }
+  }, [vehiclesOpen, vehicles.length]);
 
   useEffect(() => {
     if (!monitorOpen) return;
@@ -87,7 +102,14 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
 
   const handleMonitorClick = () => {
     setMonitorOpen((prev: boolean) => !prev);
+    setVehiclesOpen(false);
     onNavigate("monitor");
+  };
+
+  const handleVehiclesClick = () => {
+    setVehiclesOpen((prev: boolean) => !prev);
+    setMonitorOpen(false);
+    onNavigate("vehicles");
   };
 
   const handleDeviceSelect = (deviceId: string) => {
@@ -98,39 +120,7 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
   return (
     <aside className="fixed left-0 top-0 h-full flex flex-col p-4 gap-2 border-r border-surface-container-high bg-surface-container-lowest w-64 z-50">
       <div className="mb-8 px-2 py-2">
-        <svg viewBox="0 0 500 120" className="h-12 w-auto" xmlns="http://www.w3.org/2000/svg">
-          <g transform="translate(10, 10)">
-            {/* Shield Outline */}
-            <path d="M 10 15 Q 50 0 90 15 L 90 50 C 90 80 50 100 50 100 C 50 100 10 80 10 50 Z" fill="none" stroke="#1a365d" strokeWidth="8" strokeLinejoin="round" />
-            
-            {/* Compass Star */}
-            <g transform="translate(50, 35) scale(0.8)">
-              <path d="M 0 -25 L 5 -5 L 25 0 L 5 5 L 0 25 L -5 5 L -25 0 L -5 -5 Z" fill="#a18042" />
-              <path d="M 0 -25 L 5 -5 L 0 0 Z" fill="#1a365d" />
-              <path d="M 25 0 L 5 5 L 0 0 Z" fill="#1a365d" />
-              <path d="M 0 25 L -5 5 L 0 0 Z" fill="#1a365d" />
-              <path d="M -25 0 L -5 -5 L 0 0 Z" fill="#1a365d" />
-            </g>
-
-            {/* Road */}
-            <path d="M 15 80 C 30 50 60 40 95 35 L 95 55 C 60 60 40 70 25 95 Z" fill="#4a5568" />
-            {/* Dashed line on road */}
-            <path d="M 22 85 C 35 60 60 50 90 45" fill="none" stroke="#ffffff" strokeWidth="2" strokeDasharray="6,4" />
-            
-            {/* Graph bars */}
-            <g transform="translate(60, 65) scale(0.6)">
-              <rect x="0" y="10" width="3" height="10" fill="#a18042" />
-              <rect x="5" y="5" width="3" height="15" fill="#a18042" />
-              <rect x="10" y="0" width="3" height="20" fill="#a18042" />
-              <rect x="15" y="8" width="3" height="12" fill="#a18042" />
-              <rect x="20" y="2" width="3" height="18" fill="#a18042" />
-            </g>
-          </g>
-          
-          {/* Text */}
-          <text x="120" y="65" fontFamily="Inter, sans-serif" fontSize="48" fontWeight="800" fill="#1a365d">Road<tspan fill="#4a5568">Sentinel</tspan></text>
-          <text x="125" y="90" fontFamily="Inter, sans-serif" fontSize="14" fontWeight="700" fill="#4a5568" letterSpacing="1.5">ENTERPRISE FLEET INTELLIGENCE</text>
-        </svg>
+        <Logo className="h-10 w-auto" />
       </div>
       <nav className="flex-1 flex flex-col gap-1">
         <button
@@ -145,13 +135,64 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
           <LayoutDashboard className="w-5 h-5" />
           <span className="text-sm">Dashboard</span>
         </button>
-        <button className="flex items-center gap-3 px-4 py-2.5 text-secondary hover:bg-surface-container-low rounded transition-all w-full text-left">
+        <button
+          onClick={handleVehiclesClick}
+          className={cn(
+            "flex items-center gap-3 px-4 py-2.5 rounded transition-all w-full text-left",
+            currentView === "vehicles"
+              ? "text-primary bg-surface-container font-bold"
+              : "text-secondary hover:bg-surface-container-low font-medium"
+          )}
+        >
           <Car className="w-5 h-5" />
-          <span className="text-sm font-medium">Vehicles</span>
+          <span className="text-sm flex-1">Vehicles</span>
+          {vehiclesOpen ? (
+            <ChevronDown className="w-4 h-4 opacity-50" />
+          ) : (
+            <ChevronRight className="w-4 h-4 opacity-50" />
+          )}
         </button>
-        <button className="flex items-center gap-3 px-4 py-2.5 text-secondary hover:bg-surface-container-low rounded transition-all w-full text-left">
+
+        {vehiclesOpen && (
+          <div className="ml-4 pl-3 border-l-2 border-surface-container-high flex flex-col gap-0.5 py-1 transition-all">
+            {vehicles.length === 0 ? (
+              <span className="text-[10px] text-secondary px-3 py-2 italic">No vehicles found</span>
+            ) : (
+              vehicles.slice(0, 5).map((v) => (
+                <button
+                  key={v.id}
+                  onClick={() => onNavigate("vehicles")}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-surface-container-low transition-all w-full text-left group"
+                >
+                  <Package className="w-3.5 h-3.5 text-secondary opacity-50" />
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-xs font-bold text-primary truncate">{v.plateNumber}</span>
+                    <span className="text-[10px] text-secondary truncate">{v.manufacturer} {v.model}</span>
+                  </div>
+                </button>
+              ))
+            )}
+            {vehicles.length > 5 && (
+              <button
+                onClick={() => onNavigate("vehicles")}
+                className="text-[10px] font-bold text-primary px-3 py-1 hover:underline text-left"
+              >
+                View all vehicles...
+              </button>
+            )}
+          </div>
+        )}
+        <button
+          onClick={() => onNavigate("drivers")}
+          className={cn(
+            "flex items-center gap-3 px-4 py-2.5 rounded transition-all w-full text-left",
+            currentView === "drivers"
+              ? "text-primary bg-surface-container font-bold"
+              : "text-secondary hover:bg-surface-container-low font-medium"
+          )}
+        >
           <Users className="w-5 h-5" />
-          <span className="text-sm font-medium">Drivers</span>
+          <span className="text-sm">Drivers</span>
         </button>
         <button
           onClick={() => onNavigate("alerts")}

@@ -28,3 +28,4 @@ class UserEntity:
     deleted_at: datetime | None = None
     password_hash: str | None = None
     role: str = "driver"
+    fingerprint_id: str | None = None

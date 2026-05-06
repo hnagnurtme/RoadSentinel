@@ -1,17 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listAppealsAdmin, reviewAppeal } from "@/api/appeals";
+import { getUsers, type User } from "@/api/users";
+import { listAlerts } from "@/api/alerts";
 import { ApiError } from "@/api/http";
 import { env } from "@/config/env";
-import type { Appeal } from "@/types/appeal";
-import type { AppealApiDto } from "@/types/appeal";
+import type { Appeal, AppealApiDto } from "@/types/appeal";
+import type { Alert } from "@/types/alert";
+import { Check, X, Paperclip, MessageSquareWarning, ExternalLink } from "lucide-react";
+import { formatAlertTypeLabel } from "@/types/alert";
 
 function formatTs(value: string | null): string {
   if (!value) return "N/A";
   return new Date(value).toLocaleString();
 }
 
+function appealStatusClass(status: string): string {
+  if (status === "APPROVED") return "bg-emerald-100 text-emerald-700 border border-emerald-200";
+  if (status === "REJECTED") return "bg-rose-100 text-rose-700 border border-rose-200";
+  return "bg-amber-100 text-amber-700 border border-amber-200";
+}
+
 export function AdminAppeals() {
   const [appeals, setAppeals] = useState<Appeal[]>([]);
+  const [drivers, setDrivers] = useState<Record<string, User>>({});
+  const [alerts, setAlerts] = useState<Record<string, Alert>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [noteById, setNoteById] = useState<Record<string, string>>({});
@@ -37,9 +49,23 @@ export function AdminAppeals() {
 
   useEffect(() => {
     let cancelled = false;
-    listAppealsAdmin()
-      .then((rows) => {
-        if (!cancelled) setAppeals(rows);
+    
+    Promise.all([
+      listAppealsAdmin(),
+      getUsers(),
+      listAlerts(100)
+    ])
+      .then(([appealRows, userRows, alertRows]) => {
+        if (cancelled) return;
+        setAppeals(appealRows);
+        
+        const driverMap: Record<string, User> = {};
+        userRows.forEach(u => driverMap[u.id] = u);
+        setDrivers(driverMap);
+        
+        const alertMap: Record<string, Alert> = {};
+        alertRows.forEach(a => alertMap[a.id] = a);
+        setAlerts(alertMap);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -47,11 +73,12 @@ export function AdminAppeals() {
           setError("Your admin session expired. Please login again.");
           return;
         }
-        setError("Unable to load appeals.");
+        setError("Unable to load data.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+      
     return () => {
       cancelled = true;
     };
@@ -166,49 +193,84 @@ export function AdminAppeals() {
           <table className="w-full text-left">
             <thead>
               <tr className="bg-surface-container-low border-b border-surface-container-high">
-                <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-secondary">Created</th>
-                <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-secondary">Driver</th>
-                <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-secondary">Alert</th>
-                <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-secondary">Description</th>
-                <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-secondary">Attachment</th>
-                <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-secondary">Status</th>
-                <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-secondary">Admin Note</th>
-                <th className="px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-secondary text-center">Actions</th>
+                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-secondary">Created</th>
+                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-secondary">Driver & Alert ID</th>
+                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-secondary">Description & Attachment</th>
+                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-secondary text-center">Status</th>
+                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-secondary">Admin Note</th>
+                <th className="px-6 py-4 text-[10px] font-bold uppercase tracking-wider text-secondary text-center">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-surface-container-high">
               {loading ? (
                 <tr>
-                  <td className="px-4 py-10 text-secondary text-sm" colSpan={8}>
-                    Loading...
+                  <td className="px-6 py-10 text-secondary text-sm text-center" colSpan={6}>
+                    Loading appeals...
                   </td>
                 </tr>
               ) : appeals.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-10 text-secondary text-sm" colSpan={8}>
+                  <td className="px-6 py-10 text-secondary text-sm text-center flex flex-col items-center justify-center gap-2" colSpan={6}>
+                    <MessageSquareWarning className="w-8 h-8 opacity-50" />
                     No appeals yet.
                   </td>
                 </tr>
               ) : (
                 pagedAppeals.map((appeal) => {
                   const reviewed = appeal.status !== "PENDING";
+                  const driver = drivers[appeal.driverId];
+                  const driverName = driver ? [driver.name?.given, driver.name?.family].filter(Boolean).join(" ") || driver.email : appeal.driverId.split('-')[0] + "...";
+                  const alert = alerts[appeal.alertId];
+                  const alertType = alert ? formatAlertTypeLabel(alert.alertType) : appeal.alertId.split('-')[0] + "...";
+                  const vehicleText = alert?.vehicle ? `${alert.vehicle.plateNumber} - ${alert.vehicle.manufacturer}` : "Unknown Vehicle";
+
                   return (
                     <tr key={appeal.id} className="hover:bg-surface-container-low/70 transition-colors align-top">
-                      <td className="px-4 py-4 text-xs text-secondary">{formatTs(appeal.createdAt)}</td>
-                      <td className="px-4 py-4 text-xs text-primary font-semibold">{appeal.driverId}</td>
-                      <td className="px-4 py-4 text-xs text-secondary">{appeal.alertId}</td>
-                      <td className="px-4 py-4 text-xs text-secondary max-w-xs">{appeal.description || "-"}</td>
-                      <td className="px-4 py-4 text-xs">
-                        {appeal.attachmentUrl ? (
-                          <a href={appeal.attachmentUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline">
-                            Open
+                      <td className="px-6 py-4">
+                        <span className="text-xs font-medium text-on-surface-variant whitespace-nowrap">
+                          {formatTs(appeal.createdAt)}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-secondary uppercase w-12">Driver:</span>
+                          <span className="text-xs font-semibold text-primary" title={appeal.driverId}>
+                            {driverName}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-secondary uppercase w-12">Vehicle:</span>
+                          <span className="text-xs font-semibold text-secondary">
+                            {vehicleText}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold text-secondary uppercase w-12">Alert:</span>
+                          <span className="text-xs font-semibold text-error" title={appeal.alertId}>
+                            {alertType}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 max-w-[280px]">
+                        <p className="text-xs text-secondary line-clamp-3 mb-2">{appeal.description || <span className="italic opacity-50">No description provided</span>}</p>
+                        {appeal.attachmentUrl && (
+                          <a 
+                            href={appeal.attachmentUrl} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-bold uppercase rounded bg-surface-container-high text-primary hover:bg-surface-container-highest transition-colors border border-outline-variant/30"
+                          >
+                            <Paperclip className="w-3.5 h-3.5" />
+                            View Attachment
                           </a>
-                        ) : (
-                          <span className="text-outline">-</span>
                         )}
                       </td>
-                      <td className="px-4 py-4 text-xs font-bold">{appeal.status}</td>
-                      <td className="px-4 py-4 min-w-[220px]">
+                      <td className="px-6 py-4 text-center">
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${appealStatusClass(appeal.status)}`}>
+                          {appeal.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 min-w-[220px]">
                         <textarea
                           value={noteById[appeal.id] ?? appeal.adminNote ?? ""}
                           onChange={(event) =>
@@ -218,26 +280,29 @@ export function AdminAppeals() {
                             }))
                           }
                           disabled={reviewed}
+                          placeholder={reviewed ? "No note provided" : "Write a note..."}
                           rows={2}
-                          className="w-full rounded border border-outline-variant/40 bg-surface px-2 py-1 text-xs text-primary disabled:opacity-60"
+                          className="w-full rounded-lg border border-outline-variant/40 bg-surface px-3 py-2 text-xs text-primary disabled:opacity-60 focus:ring-2 focus:ring-primary/30 outline-none resize-none"
                         />
                       </td>
-                      <td className="px-4 py-4">
-                        <div className="flex justify-center gap-2">
+                      <td className="px-6 py-4">
+                        <div className="flex flex-col items-center justify-center gap-2">
                           <button
                             type="button"
                             disabled={reviewed || submittingId === appeal.id}
                             onClick={() => onReview(appeal.id, "APPROVED")}
-                            className="text-[10px] font-bold uppercase px-2 py-1 rounded bg-emerald-600 text-white disabled:opacity-50"
+                            className="w-full inline-flex items-center justify-center gap-1.5 text-[10px] font-bold uppercase px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 hover:bg-emerald-200 disabled:opacity-50 disabled:grayscale transition-colors border border-emerald-200"
                           >
+                            <Check className="w-3.5 h-3.5" />
                             Approve
                           </button>
                           <button
                             type="button"
                             disabled={reviewed || submittingId === appeal.id}
                             onClick={() => onReview(appeal.id, "REJECTED")}
-                            className="text-[10px] font-bold uppercase px-2 py-1 rounded bg-rose-600 text-white disabled:opacity-50"
+                            className="w-full inline-flex items-center justify-center gap-1.5 text-[10px] font-bold uppercase px-3 py-1.5 rounded-lg bg-rose-100 text-rose-700 hover:bg-rose-200 disabled:opacity-50 disabled:grayscale transition-colors border border-rose-200"
                           >
+                            <X className="w-3.5 h-3.5" />
                             Reject
                           </button>
                         </div>

@@ -83,6 +83,7 @@ class UserResponse(BaseModel):
     updated_at: datetime | None = Field(default=None, serialization_alias="_updated_at")
     deleted_at: datetime | None = Field(default=None, serialization_alias="_deleted_at")
     role: str = "driver"
+    fingerprint_id: str | None = None
     
 class LoginRequest(BaseModel):
     email: EmailText
