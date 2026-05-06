@@ -149,9 +149,17 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
           <Car className="w-5 h-5" />
           <span className="text-sm font-medium">Vehicles</span>
         </button>
-        <button className="flex items-center gap-3 px-4 py-2.5 text-secondary hover:bg-surface-container-low rounded transition-all w-full text-left">
+        <button
+          onClick={() => onNavigate("drivers")}
+          className={cn(
+            "flex items-center gap-3 px-4 py-2.5 rounded transition-all w-full text-left",
+            currentView === "drivers"
+              ? "text-primary bg-surface-container font-bold"
+              : "text-secondary hover:bg-surface-container-low font-medium"
+          )}
+        >
           <Users className="w-5 h-5" />
-          <span className="text-sm font-medium">Drivers</span>
+          <span className="text-sm">Drivers</span>
         </button>
         <button
           onClick={() => onNavigate("alerts")}

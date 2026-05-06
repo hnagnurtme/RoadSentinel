@@ -10,10 +10,12 @@ import { Dashboard } from "@/screens/Dashboard";
 import { IncidentReview } from "@/screens/IncidentReview";
 import { Alerts } from "@/screens/Alerts";
 import { AdminAppeals } from "@/screens/AdminAppeals";
+import { AdminDrivers } from "@/screens/AdminDrivers";
 import { Monitor } from "@/screens/Monitor";
 import { Login } from "@/screens/Login";
 import { DriverLayout } from "@/components/DriverLayout";
 import { DriverPortal } from "@/screens/DriverPortal";
+import { DriverSessions } from "@/screens/DriverSessions";
 import { DriverViolations } from "@/screens/DriverViolations";
 import { DriverIncidentRoute } from "@/screens/DriverIncidentRoute";
 import { RequireRole } from "@/auth/RequireRole";
@@ -21,7 +23,7 @@ import { useAuth } from "@/auth/AuthContext";
 import { Alert } from "@/types/alert";
 import { getAlert } from "@/api/alerts";
 
-export type AppView = "dashboard" | "incident" | "alerts" | "appeals" | "monitor";
+export type AppView = "dashboard" | "incident" | "alerts" | "appeals" | "monitor" | "drivers";
 
 function viewFromPath(pathname: string): AppView {
   if (pathname.startsWith("/monitor")) {
@@ -32,6 +34,9 @@ function viewFromPath(pathname: string): AppView {
   }
   if (pathname.startsWith("/appeals")) {
     return "appeals";
+  }
+  if (pathname.startsWith("/drivers")) {
+    return "drivers";
   }
   return "dashboard";
 }
@@ -69,6 +74,10 @@ function AppShell() {
     }
     if (view === "appeals") {
       navigate("/appeals");
+      return;
+    }
+    if (view === "drivers") {
+      navigate("/drivers");
       return;
     }
 
@@ -194,6 +203,7 @@ export default function App() {
           <Route path="/monitor" element={<MonitorRoute />} />
           <Route path="/monitor/:deviceId" element={<MonitorRoute />} />
           <Route path="/appeals" element={<AdminAppeals />} />
+          <Route path="/drivers" element={<AdminDrivers />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Route>
       </Route>
@@ -203,6 +213,7 @@ export default function App() {
           <Route path="/driver" element={<DriverPortal />} />
           <Route path="/driver/violations" element={<DriverViolations />} />
           <Route path="/driver/violations/:alertId" element={<DriverIncidentRoute />} />
+          <Route path="/driver/sessions" element={<DriverSessions />} />
           <Route path="*" element={<Navigate to="/driver" replace />} />
         </Route>
       </Route>

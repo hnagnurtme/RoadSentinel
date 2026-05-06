@@ -35,6 +35,7 @@ class UserRepositoryImpl(UserRepository):
             deleted_at=row._deleted_at,
             password_hash=row.password_hash,
             role=row.role or "driver",
+            fingerprint_id=row.fingerprint_id,
         )
 
     def create(self, user: UserEntity) -> UserEntity:
@@ -55,6 +56,7 @@ class UserRepositoryImpl(UserRepository):
             address__line2=user.address__line2,
             password_hash=user.password_hash,
             role=user.role,
+            fingerprint_id=user.fingerprint_id,
         )
         self.db.add(row)
         self.db.commit()

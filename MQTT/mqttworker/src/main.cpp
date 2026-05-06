@@ -1,52 +1,42 @@
-#include <Arduino.h>
-#include <SoftwareSerial.h>
-#include <DFRobotDFPlayerMini.h>
+#include <HardwareSerial.h>
 
-SoftwareSerial mySoftSerial(19, 18); // RX=GPIO19, TX=GPIO18
-DFRobotDFPlayerMini myDFPlayer;
+HardwareSerial mySerial(2);
+
+// 👉 chỉnh lại đúng chân bạn đang dùng
+#define RX_PIN 4
+#define TX_PIN 5
 
 void setup() {
   Serial.begin(115200);
-  mySoftSerial.begin(9600);
+  delay(1000);
 
-  Serial.println("Khởi động DFPlayer...");
+  Serial.println("\n=== UART DEBUG START ===");
 
-  if (!myDFPlayer.begin(mySoftSerial)) {
-    Serial.println("Không tìm thấy DFPlayer! Kiểm tra:");
-    Serial.println("  - Dây nối đúng chưa?");
-    Serial.println("  - Có thẻ SD không?");
-    Serial.println("  - Điện trở 1kΩ trên TX chưa?");
-    while (true); // dừng lại
-  }
+  // thử cả 2 baud phổ biến
+  mySerial.begin(57600, SERIAL_8N1, RX_PIN, TX_PIN);
 
-  Serial.println("DFPlayer sẵn sàng!");
-  myDFPlayer.volume(20);  // âm lượng 0–30
-  myDFPlayer.play(1);     // phát file 0001.mp3
+  Serial.println("UART started (57600)");
 }
 
 void loop() {
-  // In trạng thái nếu có thay đổi
-  if (myDFPlayer.available()) {
-    uint8_t type = myDFPlayer.readType();
-    int value    = myDFPlayer.read();
+  // kiểm tra có data từ sensor không
+  if (mySerial.available()) {
+    Serial.print("DATA: ");
 
-    switch (type) {
-      case DFPlayerPlayFinished:
-        Serial.print("Phát xong bài: ");
-        Serial.println(value);
-        // Tự động phát bài tiếp theo
-        myDFPlayer.next();
-        break;
-      case DFPlayerError:
-        Serial.print("Lỗi: ");
-        Serial.println(value);
-        break;
-      case DFPlayerCardInserted:
-        Serial.println("Đã cắm thẻ SD");
-        break;
-      case DFPlayerCardRemoved:
-        Serial.println("Thẻ SD bị rút");
-        break;
+    while (mySerial.available()) {
+      uint8_t c = mySerial.read();
+      Serial.print("0x");
+      if (c < 16) Serial.print("0");
+      Serial.print(c, HEX);
+      Serial.print(" ");
+    }
+
+    Serial.println();
+  } else {
+    static unsigned long last = 0;
+    if (millis() - last > 2000) {
+      Serial.println("No data from sensor...");
+      last = millis();
     }
   }
 }

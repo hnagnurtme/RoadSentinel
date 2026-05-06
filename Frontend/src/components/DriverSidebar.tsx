@@ -1,16 +1,20 @@
-import { UserRound, Video, LogOut } from "lucide-react";
+import { UserRound, Video, LogOut, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/auth/AuthContext";
 
-type Tab = "profile" | "violations";
+type Tab = "profile" | "violations" | "sessions";
 
 export function DriverSidebar() {
   const navigate = useNavigate();
   const location = useLocation();
   const { logout, user } = useAuth();
 
-  const tab: Tab = location.pathname.includes("/violations") ? "violations" : "profile";
+  const tab: Tab = location.pathname.includes("/violations") 
+    ? "violations" 
+    : location.pathname.includes("/sessions") 
+      ? "sessions" 
+      : "profile";
 
   return (
     <aside className="fixed left-0 top-0 h-full flex flex-col p-4 gap-2 border-r border-surface-container-high bg-surface-container-lowest w-64 z-50">
@@ -30,6 +34,17 @@ export function DriverSidebar() {
         >
           <UserRound className="w-5 h-5" />
           My Profile
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate("/driver/sessions")}
+          className={cn(
+            "flex items-center gap-3 px-4 py-2.5 rounded transition-all w-full text-left text-sm",
+            tab === "sessions" ? "text-primary bg-surface-container font-bold" : "text-secondary hover:bg-surface-container-low font-medium"
+          )}
+        >
+          <Clock className="w-5 h-5" />
+          Timekeeping
         </button>
         <button
           type="button"
