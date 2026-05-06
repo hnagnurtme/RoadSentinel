@@ -7,9 +7,9 @@ interface ImageUploaderProps {
   label?: string;
 }
 
-const CLOUDINARY_CLOUD_NAME = "dks1edqey";
-const CLOUDINARY_API_KEY = "326677388198311";
-const CLOUDINARY_API_SECRET = "sfp-8J3NqwkijI7m1JD54Sq5GzU";
+const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+const CLOUDINARY_API_KEY = import.meta.env.VITE_CLOUDINARY_API_KEY;
+const CLOUDINARY_API_SECRET = import.meta.env.VITE_CLOUDINARY_API_SECRET;
 
 async function generateSignature(timestamp: number): Promise<string> {
   const msg = `timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;

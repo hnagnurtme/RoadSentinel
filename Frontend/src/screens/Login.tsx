@@ -4,6 +4,8 @@ import { Shield, Radar, TriangleAlert, Route } from "lucide-react";
 import { useAuth } from "@/auth/AuthContext";
 import type React from "react";
 
+import { Logo } from "@/components/Logo";
+
 export function Login() {
   const { login, user } = useAuth();
   const navigate = useNavigate();
@@ -40,19 +42,13 @@ export function Login() {
     <div className="min-h-screen bg-background font-sans">
       <div className="grid min-h-screen grid-cols-1 lg:grid-cols-2">
         <section className="bg-surface-container-lowest flex items-center justify-center p-8 md:p-12">
-          <div className="w-full max-w-md space-y-6">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-primary-container/20 rounded-lg text-primary">
-              <Shield className="w-7 h-7" />
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-secondary">RoadSentinel</p>
-              <h1 className="text-3xl font-black text-primary tracking-tight">Sign In</h1>
-            </div>
+          <div className="w-full max-w-md space-y-8">
+          <div className="flex flex-col items-center gap-2 text-center">
+            <Logo className="h-24 w-auto" />
+            <p className="text-sm text-secondary font-medium mt-4">
+              Fleet Intelligence access for administrators and drivers.
+            </p>
           </div>
-          <p className="text-sm text-secondary font-medium">
-            Fleet Intelligence access for administrators and drivers.
-          </p>
 
           {error && (
             <div className="text-xs font-semibold bg-error-container text-on-error-container px-3 py-2 rounded-lg">
