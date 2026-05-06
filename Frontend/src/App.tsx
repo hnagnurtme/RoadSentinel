@@ -11,6 +11,7 @@ import { IncidentReview } from "@/screens/IncidentReview";
 import { Alerts } from "@/screens/Alerts";
 import { AdminAppeals } from "@/screens/AdminAppeals";
 import { AdminDrivers } from "@/screens/AdminDrivers";
+import { AdminVehicles } from "@/screens/AdminVehicles";
 import { Monitor } from "@/screens/Monitor";
 import { Login } from "@/screens/Login";
 import { DriverLayout } from "@/components/DriverLayout";
@@ -23,7 +24,7 @@ import { useAuth } from "@/auth/AuthContext";
 import { Alert } from "@/types/alert";
 import { getAlert } from "@/api/alerts";
 
-export type AppView = "dashboard" | "incident" | "alerts" | "appeals" | "monitor" | "drivers";
+export type AppView = "dashboard" | "incident" | "alerts" | "appeals" | "monitor" | "drivers" | "vehicles";
 
 function viewFromPath ( pathname: string ): AppView {
     if ( pathname.startsWith( "/monitor" ) ) {
@@ -37,6 +38,9 @@ function viewFromPath ( pathname: string ): AppView {
     }
     if ( pathname.startsWith( "/drivers" ) ) {
         return "drivers";
+    }
+    if ( pathname.startsWith( "/vehicles" ) ) {
+        return "vehicles";
     }
     return "dashboard";
 }
@@ -78,6 +82,10 @@ function AppShell () {
         }
         if ( view === "drivers" ) {
             navigate( "/drivers" );
+            return;
+        }
+        if ( view === "vehicles" ) {
+            navigate( "/vehicles" );
             return;
         }
 
@@ -204,6 +212,7 @@ export default function App () {
                     <Route path="/monitor/:deviceId" element={ <MonitorRoute /> } />
                     <Route path="/appeals" element={ <AdminAppeals /> } />
                     <Route path="/drivers" element={ <AdminDrivers /> } />
+                    <Route path="/vehicles" element={ <AdminVehicles /> } />
                     <Route path="*" element={ <Navigate to="/dashboard" replace /> } />
                 </Route>
             </Route>
