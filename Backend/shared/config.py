@@ -100,13 +100,8 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/roadsentinel"
     SQL_ECHO: bool = False
 
-    CORS_ALLOW_ORIGINS: list[str] = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ]
-    CORS_ALLOW_CREDENTIALS: bool = True
+    CORS_ALLOW_ORIGINS: list[str] = ["*"]
+    CORS_ALLOW_CREDENTIALS: bool = False
     CORS_ALLOW_METHODS: list[str] = ["*"]
     CORS_ALLOW_HEADERS: list[str] = ["*"]
 
@@ -227,9 +222,18 @@ class Settings(BaseSettings):
     @classmethod
     def _split_csv(cls, value: Any) -> list[str]:
         if isinstance(value, str):
+            value = value.strip()
+            if value.startswith("[") and value.endswith("]"):
+                try:
+                    import json
+                    parsed = json.loads(value)
+                    if isinstance(parsed, list):
+                        return [str(item).strip() for item in parsed if item]
+                except Exception:
+                    pass
             return [item.strip() for item in value.split(",") if item.strip()]
         if isinstance(value, list):
-            return value
+            return [str(item).strip() for item in value if item]
         return []
 
     @field_validator(
