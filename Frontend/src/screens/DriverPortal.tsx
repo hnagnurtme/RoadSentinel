@@ -3,6 +3,7 @@ import { CalendarDays, Mail, MapPin, UserRound, Edit2, X } from "lucide-react";
 import { env } from "@/config/env";
 import { useAuth } from "@/auth/AuthContext";
 import { DriverHeader } from "@/components/DriverHeader";
+import { ImageUploader } from "@/components/ImageUploader";
 import type { UserProfile } from "@/types/user";
 import { mapUserFromApi } from "@/types/user";
 import type { ApiEnvelope } from "@/api/http";
@@ -195,98 +196,99 @@ export function DriverPortal() {
                 <X className="w-5 h-5 text-secondary" />
               </button>
             </div>
-            <form onSubmit={handleSaveProfile} className="p-6 flex flex-col gap-4 overflow-y-auto">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col gap-2">
-                  <label className="text-sm font-bold text-secondary">Given Name</label>
-                  <input
-                    type="text"
-                    value={editGivenName}
-                    onChange={e => setEditGivenName(e.target.value)}
-                    className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
-                    placeholder="John"
+            <form onSubmit={handleSaveProfile} className="p-6 flex flex-col gap-6 overflow-y-auto">
+              <div className="flex flex-col md:flex-row gap-6">
+                <div className="w-full md:w-48 shrink-0 flex flex-col">
+                  <ImageUploader 
+                    label="Avatar Image" 
+                    currentUrl={editAvatar} 
+                    onUploadSuccess={(url) => setEditAvatar(url)} 
                   />
                 </div>
-                <div className="flex flex-col gap-2">
-                  <label className="text-sm font-bold text-secondary">Family Name</label>
-                  <input
-                    type="text"
-                    value={editFamilyName}
-                    onChange={e => setEditFamilyName(e.target.value)}
-                    className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
-                    placeholder="Doe"
-                  />
+                <div className="flex-1 flex flex-col gap-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-bold text-secondary">Given Name</label>
+                      <input
+                        type="text"
+                        value={editGivenName}
+                        onChange={e => setEditGivenName(e.target.value)}
+                        className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
+                        placeholder="John"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-bold text-secondary">Family Name</label>
+                      <input
+                        type="text"
+                        value={editFamilyName}
+                        onChange={e => setEditFamilyName(e.target.value)}
+                        className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
+                        placeholder="Doe"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-bold text-secondary">Date of Birth</label>
+                      <input
+                        type="date"
+                        value={editBirthday}
+                        onChange={e => setEditBirthday(e.target.value)}
+                        className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-bold text-secondary">Gender</label>
+                      <select
+                        value={editGender}
+                        onChange={e => setEditGender(e.target.value)}
+                        className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
+                      >
+                        <option value="">Select Gender</option>
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-bold text-secondary">City</label>
+                      <input
+                        type="text"
+                        value={editCity}
+                        onChange={e => setEditCity(e.target.value)}
+                        className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
+                        placeholder="Da Nang"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-bold text-secondary">Country</label>
+                      <input
+                        type="text"
+                        value={editCountry}
+                        onChange={e => setEditCountry(e.target.value)}
+                        className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
+                        placeholder="Vietnam"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 gap-4">
+                    <div className="flex flex-col gap-2">
+                      <label className="text-sm font-bold text-secondary">Address Line 1</label>
+                      <input
+                        type="text"
+                        value={editAddressLine1}
+                        onChange={e => setEditAddressLine1(e.target.value)}
+                        className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
+                        placeholder="123 Example St"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col gap-2 col-span-2">
-                  <label className="text-sm font-bold text-secondary">Avatar URL</label>
-                  <input
-                    type="url"
-                    value={editAvatar}
-                    onChange={e => setEditAvatar(e.target.value)}
-                    className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
-                    placeholder="https://example.com/avatar.jpg"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="flex flex-col gap-2">
-                  <label className="text-sm font-bold text-secondary">Date of Birth</label>
-                  <input
-                    type="date"
-                    value={editBirthday}
-                    onChange={e => setEditBirthday(e.target.value)}
-                    className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <label className="text-sm font-bold text-secondary">Gender</label>
-                  <select
-                    value={editGender}
-                    onChange={e => setEditGender(e.target.value)}
-                    className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
-                  >
-                    <option value="">Select Gender</option>
-                    <option value="male">Male</option>
-                    <option value="female">Female</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <label className="text-sm font-bold text-secondary">City</label>
-                  <input
-                    type="text"
-                    value={editCity}
-                    onChange={e => setEditCity(e.target.value)}
-                    className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
-                    placeholder="Da Nang"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col gap-2">
-                  <label className="text-sm font-bold text-secondary">Country</label>
-                  <input
-                    type="text"
-                    value={editCountry}
-                    onChange={e => setEditCountry(e.target.value)}
-                    className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
-                    placeholder="Vietnam"
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <label className="text-sm font-bold text-secondary">Address Line 1</label>
-                  <input
-                    type="text"
-                    value={editAddressLine1}
-                    onChange={e => setEditAddressLine1(e.target.value)}
-                    className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
-                    placeholder="123 Example St"
-                  />
-                </div>
-              </div>
-              <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-surface-container-high">
+              <div className="flex justify-end gap-3 mt-2 pt-4 border-t border-surface-container-high">
                 <button
                   type="button"
                   onClick={() => setIsEditModalOpen(false)}

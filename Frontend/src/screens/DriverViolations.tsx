@@ -11,6 +11,7 @@ import type { Alert } from "@/types/alert";
 import { formatAlertTypeLabel } from "@/types/alert";
 import { AlertSeverityBadge } from "@/features/alerts/components/AlertSeverityBadge";
 import { DriverHeader } from "@/components/DriverHeader";
+import { ImageUploader } from "@/components/ImageUploader";
 
 function formatTs(value: string | null): string {
   if (!value) return "N/A";
@@ -374,29 +375,29 @@ export function DriverViolations() {
                 Alert: <span className="font-semibold text-primary">{formatAlertTypeLabel(appealModalAlert.alertType)}</span>
               </p>
 
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-secondary uppercase tracking-wide">
-                  Description (Optional)
-                </label>
-                <textarea
-                  value={appealDescription}
-                  onChange={(event) => setAppealDescription(event.target.value)}
-                  rows={4}
-                  placeholder="Explain why this violation should be reviewed..."
-                  className="w-full rounded-lg border border-outline-variant/40 bg-surface px-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-primary/30"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-secondary uppercase tracking-wide">
-                  Attachment URL (Optional)
-                </label>
-                <input
-                  value={appealAttachmentUrl}
-                  onChange={(event) => setAppealAttachmentUrl(event.target.value)}
-                  placeholder="https://..."
-                  className="w-full rounded-lg border border-outline-variant/40 bg-surface px-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-primary/30"
-                />
+              <div className="flex flex-col md:flex-row gap-6">
+                <div className="w-full md:w-48 shrink-0 flex flex-col">
+                  <ImageUploader 
+                    label="Attachment (Optional)" 
+                    currentUrl={appealAttachmentUrl} 
+                    onUploadSuccess={(url) => setAppealAttachmentUrl(url)} 
+                  />
+                </div>
+                
+                <div className="flex-1 flex flex-col gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-secondary uppercase tracking-wide">
+                      Description (Optional)
+                    </label>
+                    <textarea
+                      value={appealDescription}
+                      onChange={(event) => setAppealDescription(event.target.value)}
+                      rows={6}
+                      placeholder="Explain why this violation should be reviewed..."
+                      className="w-full rounded-lg border border-outline-variant/40 bg-surface px-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-primary/30 resize-none h-full"
+                    />
+                  </div>
+                </div>
               </div>
 
               {appealError && (
