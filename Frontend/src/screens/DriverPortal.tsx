@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import { CalendarDays, Mail, MapPin, UserRound, Edit2, X } from "lucide-react";
 import { env } from "@/config/env";
 import { useAuth } from "@/auth/AuthContext";
-import { DriverHeader } from "@/components/DriverHeader";
 import { ImageUploader } from "@/components/ImageUploader";
 import type { UserProfile } from "@/types/user";
 import { mapUserFromApi } from "@/types/user";
@@ -129,7 +128,6 @@ export function DriverPortal() {
 
   return (
     <>
-      <DriverHeader />
       <div className="p-10 max-w-[1200px] space-y-8">
         <div>
           <span className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-on-surface-variant block mb-2">
