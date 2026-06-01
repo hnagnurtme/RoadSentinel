@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { ExternalLink, MessageSquareWarning, Send, Video, X } from "lucide-react";
 import { createAppeal, listMyAppeals } from "@/api/appeals";
@@ -43,10 +44,10 @@ export function DriverViolations() {
   const [appealAttachmentUrl, setAppealAttachmentUrl] = useState("");
   const [appealSubmitting, setAppealSubmitting] = useState(false);
   const [appealError, setAppealError] = useState<string | null>(null);
-  const [toasts, setToasts] = useState<Array<{ id: number; message: string }>>([]);
+  const [toasts, setToasts] = useState<Array<{ id: number; message: string; type: "info" | "warning" }>>([]);
   const lastToastAtRef = useRef<Record<string, number>>({});
 
-  const pushToast = (message: string) => {
+  const pushToast = (message: string, type: "info" | "warning" = "info") => {
     const now = Date.now();
     const lastAt = lastToastAtRef.current[message] ?? 0;
     if (now - lastAt < 1200) {
@@ -54,10 +55,10 @@ export function DriverViolations() {
     }
     lastToastAtRef.current[message] = now;
     const id = Date.now() + Math.floor(Math.random() * 1000);
-    setToasts((prev) => [...prev, { id, message }]);
+    setToasts((prev) => [...prev, { id, message, type }]);
     window.setTimeout(() => {
       setToasts((prev) => prev.filter((item) => item.id !== id));
-    }, 3500);
+    }, 4500);
   };
 
   const refreshAppeals = async () => {
@@ -78,18 +79,21 @@ export function DriverViolations() {
     setAppealsByAlert(latestByAlert);
   };
 
+  const refreshAlerts = async () => {
+    try {
+      const alertRows = await listAlerts(50);
+      setAlerts(alertRows);
+    } catch {
+      setError("Unable to load violation list.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
-    listAlerts(50)
-      .then((alertRows) => {
-        if (!cancelled) setAlerts(alertRows);
-      })
-      .catch(() => {
-        if (!cancelled) setError("Unable to load violation list.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    
+    refreshAlerts().catch(() => undefined);
 
     refreshAppeals().catch((err: unknown) => {
       if (cancelled) return;
@@ -117,6 +121,7 @@ export function DriverViolations() {
     return "Failed to submit appeal. Please try again.";
   };
 
+  // WS for Appeals
   useEffect(() => {
     if (!user?.id) return;
 
@@ -161,6 +166,59 @@ export function DriverViolations() {
         }
         if (!manuallyClosed) {
           reconnectTimer = window.setTimeout(connect, 1500);
+        }
+      };
+    };
+
+    connect();
+    return () => {
+      manuallyClosed = true;
+      if (heartbeatTimer != null) window.clearInterval(heartbeatTimer);
+      if (reconnectTimer != null) window.clearTimeout(reconnectTimer);
+      if (ws && ws.readyState === WebSocket.OPEN) ws.close(1000, "component teardown");
+    };
+  }, [user?.id]);
+
+  // WS for Real-time Alerts (Violations)
+  useEffect(() => {
+    if (!user?.id) return;
+
+    let ws: WebSocket | null = null;
+    let heartbeatTimer: number | null = null;
+    let reconnectTimer: number | null = null;
+    let manuallyClosed = false;
+
+    const connect = () => {
+      ws = new WebSocket(env.wsAlertsUrl);
+
+      ws.onopen = () => {
+        heartbeatTimer = window.setInterval(() => {
+          if (ws?.readyState === WebSocket.OPEN) ws.send("ping");
+        }, 10_000);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data) as {
+            event?: "alert.created";
+            data?: any;
+          };
+          if (payload.event === "alert.created" && payload.data?.driver_id === user.id) {
+            pushToast(`New violation recorded: ${formatAlertTypeLabel(payload.data.alert_type)}`, "warning");
+            void refreshAlerts();
+          }
+        } catch {
+          // ignore
+        }
+      };
+
+      ws.onclose = () => {
+        if (heartbeatTimer != null) {
+          window.clearInterval(heartbeatTimer);
+          heartbeatTimer = null;
+        }
+        if (!manuallyClosed) {
+          reconnectTimer = window.setTimeout(connect, 2000);
         }
       };
     };
@@ -424,7 +482,13 @@ export function DriverViolations() {
 
       <div className="fixed right-4 top-4 z-80 space-y-2">
         {toasts.map((toast) => (
-          <div key={toast.id} className="min-w-[260px] rounded-lg bg-primary px-4 py-3 text-xs font-semibold text-on-primary shadow-lg">
+          <div 
+            key={toast.id} 
+            className={cn(
+              "min-w-[260px] rounded-lg px-4 py-3 text-xs font-semibold shadow-lg transition-all transform animate-in slide-in-from-right-full",
+              toast.type === "warning" ? "bg-rose-600 text-white" : "bg-primary text-on-primary"
+            )}
+          >
             {toast.message}
           </div>
         ))}

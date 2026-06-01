@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from passlib.hash import bcrypt
+from shared.security import verify_password
 
 from application.auth.login_command import LoginCommand
 from domain.user.entities import UserEntity
@@ -19,7 +19,7 @@ class LoginHandler:
         user = self._users.get_by_email(email.value)
         if user is None or not user.password_hash:
             raise UnauthorizedException("Invalid email or password")
-        if not bcrypt.verify(command.password, user.password_hash):
+        if not verify_password(command.password, user.password_hash):
             raise UnauthorizedException("Invalid email or password")
 
         token = create_access_token(user_id=user._id, role=user.role)  # type: ignore[arg-type]

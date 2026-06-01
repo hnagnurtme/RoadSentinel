@@ -6,4 +6,7 @@ export const env = {
   apiBaseUrl: import.meta.env.VITE_API_BASE_URL ?? DEFAULT_API_BASE_URL,
   wsAlertsUrl: import.meta.env.VITE_WS_ALERTS_URL ?? DEFAULT_WS_ALERTS_URL,
   wsAppealsUrl: import.meta.env.VITE_WS_APPEALS_URL ?? DEFAULT_WS_APPEALS_URL,
+  cloudinaryCloudName: import.meta.env.VITE_CLOUDINARY_CLOUD_NAME ?? "",
+  cloudinaryApiKey: import.meta.env.VITE_CLOUDINARY_API_KEY ?? "",
+  cloudinaryApiSecret: import.meta.env.VITE_CLOUDINARY_API_SECRET ?? "",
 };
