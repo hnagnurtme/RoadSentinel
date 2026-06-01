@@ -1,4 +1,4 @@
-from passlib.hash import bcrypt
+from shared.security import hash_password
 from application.user.commands.create_user import CreateUserCommand
 from domain.user.entities import UserEntity
 from domain.user.repository import UserRepository
@@ -17,7 +17,7 @@ class CreateUserHandler:
 
         password_hash = None
         if command.password_plain:
-            password_hash = bcrypt.hash(command.password_plain)
+            password_hash = hash_password(command.password_plain)
 
         user = UserEntity(
             email=email,

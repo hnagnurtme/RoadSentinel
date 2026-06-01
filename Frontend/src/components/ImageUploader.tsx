@@ -7,16 +7,43 @@ interface ImageUploaderProps {
   label?: string;
 }
 
-const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
-const CLOUDINARY_API_KEY = import.meta.env.VITE_CLOUDINARY_API_KEY;
-const CLOUDINARY_API_SECRET = import.meta.env.VITE_CLOUDINARY_API_SECRET;
+import { env } from "@/config/env";
+
+// Reliable pure JS SHA-1 implementation
+function sha1(str: string): string {
+  const buffer = new TextEncoder().encode(str);
+  const len = buffer.length;
+  const words = new Uint32Array(((len + 8) >> 6) + 1 << 4);
+  for (let i = 0; i < len; i++) words[i >> 2] |= buffer[i] << (24 - (i % 4) * 8);
+  words[len >> 2] |= 0x80 << (24 - (len % 4) * 8);
+  words[words.length - 1] = len * 8;
+
+  let h = [0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0];
+  const rotateLeft = (n: number, s: number) => (n << s) | (n >>> (32 - s));
+
+  for (let i = 0; i < words.length; i += 16) {
+    const w = new Uint32Array(80);
+    for (let j = 0; j < 16; j++) w[j] = words[i + j];
+    for (let j = 16; j < 80; j++) w[j] = rotateLeft(w[j - 3] ^ w[j - 8] ^ w[j - 14] ^ w[j - 16], 1);
+
+    let [a, b, c, d, e] = h;
+    for (let j = 0; j < 80; j++) {
+      let f, k;
+      if (j < 20) { f = (b & c) | (~b & d); k = 0x5A827999; }
+      else if (j < 40) { f = b ^ c ^ d; k = 0x6ED9EBA1; }
+      else if (j < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8F1BBCDC; }
+      else { f = b ^ c ^ d; k = 0xCA62C1D6; }
+      const temp = (rotateLeft(a, 5) + f + e + k + w[j]) | 0;
+      e = d; d = c; c = rotateLeft(b, 30); b = a; a = temp;
+    }
+    h[0] = (h[0] + a) | 0; h[1] = (h[1] + b) | 0; h[2] = (h[2] + c) | 0; h[3] = (h[3] + d) | 0; h[4] = (h[4] + e) | 0;
+  }
+  return h.map(x => (x >>> 0).toString(16).padStart(8, '0')).join('');
+}
 
 async function generateSignature(timestamp: number): Promise<string> {
-  const msg = `timestamp=${timestamp}${CLOUDINARY_API_SECRET}`;
-  const msgBuffer = new TextEncoder().encode(msg);
-  const hashBuffer = await crypto.subtle.digest('SHA-1', msgBuffer);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const msg = `timestamp=${timestamp}${env.cloudinaryApiSecret}`;
+  return sha1(msg);
 }
 
 export function ImageUploader({ onUploadSuccess, currentUrl, label = "Upload Image" }: ImageUploaderProps) {
@@ -38,13 +65,13 @@ export function ImageUploader({ onUploadSuccess, currentUrl, label = "Upload Ima
 
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("api_key", CLOUDINARY_API_KEY);
+      formData.append("api_key", env.cloudinaryApiKey);
       formData.append("timestamp", timestamp.toString());
       formData.append("signature", signature);
       // Optional: you can add folder name if needed
       // formData.append("folder", "roadsentinel/uploads");
 
-      const response = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
+      const response = await fetch(`https://api.cloudinary.com/v1_1/${env.cloudinaryCloudName}/image/upload`, {
         method: "POST",
         body: formData,
       });
@@ -54,11 +81,12 @@ export function ImageUploader({ onUploadSuccess, currentUrl, label = "Upload Ima
         setPreviewUrl(data.secure_url);
         onUploadSuccess(data.secure_url);
       } else {
+        console.error("Cloudinary Error Response:", data);
         throw new Error(data.error?.message || "Upload failed");
       }
     } catch (error) {
-      console.error("Cloudinary upload error:", error);
-      alert("Failed to upload image.");
+      console.error("Cloudinary upload catch error:", error);
+      alert(error instanceof Error ? error.message : "Failed to upload image.");
     } finally {
       setIsUploading(false);
     }

@@ -1,7 +1,14 @@
 # AI/CV additions — only needed when WITH_AI=true (~2.5 GB extra)
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.7.1+cpu
-torchvision==0.22.1+cpu
+
+# macOS native wheels (without +cpu)
+torch>=2.7.0; sys_platform == "darwin"
+torchvision>=0.23.0; sys_platform == "darwin"
+
+# Linux CPU builds
+torch==2.7.1+cpu; sys_platform == "linux"
+torchvision==0.22.1+cpu; sys_platform == "linux"
+
 ultralytics>=8.0.0
 numpy>=1.24.0
 opencv-python-headless>=4.8.0
