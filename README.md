@@ -21,7 +21,8 @@ This document provides instructions on how to install and run the system **purel
 The following diagram illustrates the production runtime architecture of the system when deployed with physical embedded hardware on vehicles (excluding the development Simulator):
 
 ```mermaid
-graph TD
+%%{init: {"theme": "neutral", "flowchart": {"curve": "step"}}}%%
+flowchart TD
     subgraph Cabin["Vehicle Cabin (Physical Hardware)"]
         CAM["ESP32-CAM <br> (OV2640 Camera)"]
         MCU["ESP32 Controller <br> (Fingerprint Sensor + Alarm Buzzer)"]

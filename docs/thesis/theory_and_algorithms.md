@@ -43,17 +43,48 @@ $$P = \frac{N_{vi\_pham}}{N}$$
 * Sự cố chỉ chính thức được ghi nhận và kích hoạt báo động khi tỉ lệ vi phạm $P$ vượt quá một ngưỡng kích hoạt xác định $\theta$ (ví dụ: $\theta = 0.70$ hay $70\%$).
 
 ### Hình vẽ minh họa Cửa sổ trượt
-```
-Trục thời gian (Thời gian thực trôi từ trái sang phải)
-[ Frame 1: OK ] -> [ Frame 2: OK ] -> [ Frame 3: Sleeping ] -> [ Frame 4: Sleeping ] -> [ Frame 5: Sleeping ]
-|<---------------------------- Cửa sổ trượt W = 2 giây ---------------------------->|
-Tỉ lệ vi phạm P = 3 / 5 = 60%. Ngưỡng kích hoạt Theta = 70% => KHÔNG BÁO ĐỘNG (Chỉ nháy mắt/nhiễu).
 
-Tiếp tục trượt sang phải:
-[ Frame 2: OK ] -> [ Frame 3: Sleeping ] -> [ Frame 4: Sleeping ] -> [ Frame 5: Sleeping ] -> [ Frame 6: Sleeping ]
-|<---------------------------- Cửa sổ trượt W = 2 giây ---------------------------->|
-Tỉ lệ vi phạm P = 4 / 5 = 80%. Ngưỡng kích hoạt Theta = 70% => KÍCH HOẠT BÁO ĐỘNG NGỦ GẬT (Thực sự ngủ gật).
+```mermaid
+%%{init: {"theme": "neutral", "flowchart": {"curve": "step"}}}%%
+flowchart TD
+    subgraph W1["Cửa sổ trượt tại thời điểm t1 (Không kích hoạt báo động)"]
+        direction LR
+        Frame1["Frame 1<br>Bình thường (OK)"] --- Frame2["Frame 2<br>Bình thường (OK)"]
+        Frame2 --- Frame3["Frame 3<br>Ngủ gật (Violation)"]
+        Frame3 --- Frame4["Frame 4<br>Ngủ gật (Violation)"]
+        Frame4 --- Frame5["Frame 5<br>Ngủ gật (Violation)"]
+        
+        classDef frameOK fill:#ffffff,stroke:#000000;
+        classDef frameSleep fill:#f1f5f9,stroke:#000000,stroke-width:2px;
+        
+        class Frame1,Frame2 frameOK;
+        class Frame3,Frame4,Frame5 frameSleep;
+    end
+    
+    subgraph Result1["Kết quả phân tích t1"]
+        Calc1["Tỉ lệ vi phạm P = 3/5 (60%) <br> Ngưỡng kích hoạt = 70% <br> => KHÔNG BÁO ĐỘNG (Nhiễu / Nháy mắt)"]
+    end
+    
+    W1 --> Result1
+
+    subgraph W2["Cửa sổ trượt tại thời điểm t2 (Cửa sổ dịch chuyển sang phải)"]
+        direction LR
+        Frame2_2["Frame 2<br>Bình thường (OK)"] --- Frame3_2["Frame 3<br>Ngủ gật (Violation)"]
+        Frame3_2 --- Frame4_2["Frame 4<br>Ngủ gật (Violation)"]
+        Frame4_2 --- Frame5_2["Frame 5<br>Ngủ gật (Violation)"]
+        Frame5_2 --- Frame6_2["Frame 6<br>Ngủ gật (Violation)"]
+        
+        class Frame2_2 frameOK;
+        class Frame3_2,Frame4_2,Frame5_2,Frame6_2 frameSleep;
+    end
+    
+    subgraph Result2["Kết quả phân tích t2"]
+        Calc2["Tỉ lệ vi phạm P = 4/5 (80%) <br> Ngưỡng kích hoạt = 70% <br> => KÍCH HOẠT BÁO ĐỘNG 🔔 (Ngủ gật thực sự)"]
+    end
+    
+    W2 --> Result2
 ```
+
 
 ### Thuật toán bằng mã giả (Pseudocode)
 ```python

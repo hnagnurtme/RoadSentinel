@@ -36,7 +36,8 @@ Hệ thống đặt ra 4 mục tiêu kỹ thuật lớn:
 Hệ thống được thiết kế theo kiến trúc hướng dịch vụ (Service-Oriented Architecture - SOA) kết hợp với mô hình Event-Driven dựa trên MQTT và WebSockets.
 
 ```mermaid
-graph TB
+%%{init: {"theme": "neutral", "flowchart": {"curve": "step"}}}%%
+flowchart TB
     subgraph IoT_Devices["Thiết bị trên cabin xe (IoT Devices)"]
         ESP32_CAM["ESP32-CAM (Stream video via WebSockets)"]
         ESP32_Device["ESP32 Fingerprint & Buzzer (HTTP Request with HMAC + MQTT Subscriber)"]

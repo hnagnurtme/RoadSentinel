@@ -41,7 +41,8 @@ Cụm này bao gồm bo mạch ESP32 kết nối với cảm biến vân tay qua
 ### Sơ đồ kết nối dây phần cứng (Wiring Diagram)
 
 ```mermaid
-graph LR
+%%{init: {"theme": "neutral", "flowchart": {"curve": "step"}}}%%
+flowchart LR
     subgraph ESP32_NodeMCU["Bộ vi điều khiển ESP32"]
         Pin_3V3["Chân 3.3V"]
         Pin_GND["Chân GND"]
