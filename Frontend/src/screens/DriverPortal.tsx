@@ -9,6 +9,12 @@ import { mapUserFromApi } from "@/types/user";
 import type { ApiEnvelope } from "@/api/http";
 import { updateUser } from "@/api/users";
 import { useLanguage } from "@/i18n/LanguageContext";
+import { listAlerts } from "@/api/alerts";
+import { listMyAppeals } from "@/api/appeals";
+import { calculateSafetyScore, getSafetyScoreLabel } from "@/utils/safetyScore";
+import type { Alert } from "@/types/alert";
+import type { Appeal } from "@/types/appeal";
+import { useMemo } from "react";
 
 function displayName(u: UserProfile): string {
   const n = [u.name__given, u.name__family].filter(Boolean).join(" ");
@@ -31,6 +37,8 @@ export function DriverPortal() {
   const [editCountry, setEditCountry] = useState("");
   const [editAddressLine1, setEditAddressLine1] = useState("");
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [appeals, setAppeals] = useState<Appeal[]>([]);
 
   const fetchProfile = () => {
     if (!token) return;
@@ -61,6 +69,30 @@ export function DriverPortal() {
   useEffect(() => {
     fetchProfile();
   }, [token]);
+
+  useEffect(() => {
+    if (!profile) return;
+    
+    // Fetch alerts & appeals for calculating safety score
+    Promise.all([
+      listAlerts(100),
+      listMyAppeals()
+    ])
+      .then(([alertRows, appealRows]) => {
+        setAlerts(alertRows);
+        setAppeals(appealRows);
+      })
+      .catch(console.error);
+  }, [profile]);
+
+  const safetyScore = useMemo(() => {
+    if (!profile) return 100;
+    return calculateSafetyScore(profile.id, alerts, appeals);
+  }, [profile, alerts, appeals]);
+
+  const scoreLabel = useMemo(() => {
+    return getSafetyScoreLabel(safetyScore, language);
+  }, [safetyScore, language]);
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -183,15 +215,50 @@ export function DriverPortal() {
                 </div>
               </div>
             </section>
-            <section className="bg-primary text-white p-6 rounded-xl shadow-sm flex flex-col justify-between lg:col-span-4">
-              <div>
-                <p className="text-[10px] font-bold opacity-70 uppercase tracking-widest">{t("driverPortal.identityId")}</p>
-                <p className="text-lg font-mono mt-2 break-all">{profile.id}</p>
-              </div>
-              <p className="text-xs text-white/80 mt-6">
-                {t("driverPortal.violationsCardText")}
-              </p>
-            </section>
+            <div className="lg:col-span-4 flex flex-col gap-6">
+              {/* Safety Score Card */}
+              <section className="bg-surface-container-lowest p-6 rounded-xl ring-1 ring-outline-variant/15 shadow-sm space-y-4">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-secondary uppercase tracking-widest mb-1">
+                    {t("drivers.safetyScore")}
+                  </span>
+                  <div className="flex items-baseline justify-between mt-2">
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-4xl font-black text-primary">{safetyScore}</span>
+                      <span className="text-sm font-semibold text-secondary">/ 100</span>
+                    </div>
+                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${scoreLabel.colorClass}`}>
+                      {scoreLabel.label}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="w-full bg-surface-container h-2 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full rounded-full transition-all duration-1000 ${scoreLabel.bgClass}`}
+                    style={{ width: `${safetyScore}%` }}
+                  />
+                </div>
+
+                <p className="text-[10px] text-secondary leading-normal">
+                  {language === "en" 
+                    ? "Deductions applied based on moderates and criticals. Maintain above 80 for safe standing."
+                    : "Điểm bị khấu trừ theo mức độ vi phạm. Duy trì trên 80 để đạt mức An toàn."}
+                </p>
+              </section>
+
+              {/* Identity Card */}
+              <section className="bg-primary text-white p-6 rounded-xl shadow-sm flex flex-col justify-between flex-1 min-h-[140px]">
+                <div>
+                  <p className="text-[10px] font-bold opacity-70 uppercase tracking-widest">{t("driverPortal.identityId")}</p>
+                  <p className="text-lg font-mono mt-2 break-all">{profile.id}</p>
+                </div>
+                <p className="text-xs text-white/80 mt-4">
+                  {t("driverPortal.violationsCardText")}
+                </p>
+              </section>
+            </div>
           </div>
         )}
       </div>
