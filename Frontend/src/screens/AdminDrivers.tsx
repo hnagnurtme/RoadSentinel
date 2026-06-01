@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, Fingerprint, Clock, AlertTriangle, Edit2, X, Check, Plus, ExternalLink, RefreshCw } from "lucide-react";
+import { Users, Fingerprint, Clock, AlertTriangle, Edit2, X, Check, Plus, ExternalLink, RefreshCw, Search } from "lucide-react";
 import { getUsers, updateFingerprint, getDrivingSessions, createUser, User, DrivingSession, updateUser, enrollFingerprint } from "@/api/users";
 import { env } from "@/config/env";
 import { listAlerts } from "@/api/alerts";
@@ -11,6 +11,7 @@ export function AdminDrivers () {
     const [ drivers, setDrivers ] = useState<User[]>( [] );
     const [ loading, setLoading ] = useState( true );
     const [ selectedDriver, setSelectedDriver ] = useState<User | null>( null );
+    const [ searchTerm, setSearchTerm ] = useState( "" );
 
     // Add driver modal state
     const [ isAddModalOpen, setIsAddModalOpen ] = useState( false );
@@ -79,19 +80,37 @@ export function AdminDrivers () {
         }
     };
 
+    const filteredDrivers = drivers.filter( d =>
+        ( d.name || "" ).toLowerCase().includes( searchTerm.toLowerCase() ) ||
+        ( d.email || "" ).toLowerCase().includes( searchTerm.toLowerCase() )
+    );
+
     return (
         <div className="flex flex-col h-full bg-surface-container-lowest relative">
-            <div className="flex items-center justify-between px-8 py-6 border-b border-surface-container-high bg-surface-container-lowest/80 backdrop-blur-xl sticky top-0 z-20">
+            <div className="flex items-center justify-between px-8 py-6 border-b border-surface-container-high bg-surface-container-lowest/80 backdrop-blur-xl sticky top-0 z-20 gap-4">
                 <div className="flex flex-col gap-1">
                     <h1 className="text-2xl font-bold tracking-tight text-primary">Driver Management</h1>
                     <p className="text-sm text-secondary">Manage driver profiles, fingerprints, and view history.</p>
                 </div>
-                <button
-                    onClick={ () => setIsAddModalOpen( true ) }
-                    className="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary font-bold rounded-lg hover:opacity-90 transition-opacity"
-                >
-                    <Plus className="w-5 h-5" /> Add Driver
-                </button>
+                
+                <div className="flex items-center gap-4 flex-1 max-w-md ml-auto">
+                    <div className="relative w-full">
+                        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-secondary" />
+                        <input
+                            type="text"
+                            placeholder="Search name, email..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full bg-surface-container rounded-lg pl-9 pr-4 py-2 text-sm focus:ring-2 focus:ring-primary outline-none border border-outline-variant/10"
+                        />
+                    </div>
+                    <button
+                        onClick={ () => setIsAddModalOpen( true ) }
+                        className="flex items-center gap-2 px-4 py-2 bg-primary text-on-primary font-bold rounded-lg hover:opacity-90 transition-opacity shrink-0"
+                    >
+                        <Plus className="w-5 h-5" /> Add Driver
+                    </button>
+                </div>
             </div>
 
             <div className="flex-1 flex overflow-hidden">
@@ -99,11 +118,11 @@ export function AdminDrivers () {
                 <div className="w-1/3 border-r border-surface-container-high overflow-y-auto bg-surface-container-lowest/50">
                     { loading ? (
                         <div className="p-8 text-center text-secondary">Loading drivers...</div>
-                    ) : drivers.length === 0 ? (
+                    ) : filteredDrivers.length === 0 ? (
                         <div className="p-8 text-center text-secondary">No drivers found.</div>
                     ) : (
                         <div className="flex flex-col divide-y divide-surface-container-high">
-                            { drivers.map( driver => (
+                            { filteredDrivers.map( driver => (
                                 <button
                                     key={ driver.id }
                                     onClick={ () => setSelectedDriver( driver ) }

@@ -13,3 +13,4 @@ class ListAlertsOverviewQuery(NamedTuple):
     """Fetch a paginated list of alerts with pre-joined relations."""
     limit: int
     driver_id: uuid.UUID | None = None
+    vehicle_id: uuid.UUID | None = None

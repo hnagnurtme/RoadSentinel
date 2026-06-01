@@ -93,6 +93,7 @@ async def create_alert(
 def list_alerts(
     limit: int = Query(default=20, ge=1, le=100),
     driver_id: uuid.UUID | None = None,
+    vehicle_id: uuid.UUID | None = None,
     overview_handler: ListAlertsOverviewHandler = Depends(
         get_list_alerts_overview_handler
     ),
@@ -103,7 +104,11 @@ def list_alerts(
         effective_driver_id = auth.user_id
 
     data = overview_handler.handle(
-        ListAlertsOverviewQuery(limit=limit, driver_id=effective_driver_id)
+        ListAlertsOverviewQuery(
+            limit=limit, 
+            driver_id=effective_driver_id, 
+            vehicle_id=vehicle_id
+        )
     )
     return success_response(data=data)
 

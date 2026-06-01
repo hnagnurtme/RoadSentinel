@@ -6,11 +6,15 @@ function normalizeAlertPayload(data: AlertApiDto[] | AlertApiDto): AlertApiDto[]
   return Array.isArray(data) ? data : [data];
 }
 
-export async function listAlerts(limit = 20, driverId?: string): Promise<Alert[]> {
+export async function listAlerts(limit = 20, driverId?: string, vehicleId?: string): Promise<Alert[]> {
   const query = new URLSearchParams({ limit: String(limit) });
 
   if (driverId) {
     query.set("driver_id", driverId);
+  }
+
+  if (vehicleId) {
+    query.set("vehicle_id", vehicleId);
   }
 
   const url = `${env.apiBaseUrl}/alerts?${query.toString()}`;

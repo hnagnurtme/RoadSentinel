@@ -35,6 +35,11 @@ class ListAlertsOverviewHandler:
                 sql += " AND driver_id = :driver_id"
                 params["driver_id"] = str(query.driver_id)
 
+            # Add vehicle_id filter if provided
+            if query.vehicle_id is not None:
+                sql += " AND vehicle_id = :vehicle_id"
+                params["vehicle_id"] = str(query.vehicle_id)
+
             # Add ordering and limit
             sql += ' ORDER BY "_created_at" DESC LIMIT :limit'
             params["limit"] = limit
