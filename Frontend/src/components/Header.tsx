@@ -1,17 +1,9 @@
-import { Search, Bell, Mail, User } from "lucide-react";
+import { Bell, Mail, User } from "lucide-react";
 
 export function Header() {
   return (
     <header className="sticky top-0 z-40 bg-surface-container-lowest border-b border-surface-container-high shadow-sm px-10 py-4 flex items-center justify-between">
       <div className="flex items-center gap-8 flex-1">
-        <div className="relative max-w-md w-full ml-4">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-outline w-5 h-5" />
-          <input
-            className="w-full pl-11 pr-4 py-2.5 bg-surface-container-low/80 border border-surface-container-high rounded-xl text-sm placeholder:text-outline focus:outline-none focus:ring-2 focus:ring-primary/10 focus:border-primary/20 transition-all font-normal"
-            placeholder="Search assets, incidents or drivers..."
-            type="text"
-          />
-        </div>
       </div>
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-1.5 mr-2">

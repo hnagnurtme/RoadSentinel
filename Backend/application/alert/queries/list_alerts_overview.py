@@ -5,6 +5,7 @@ Query for listing alerts with pre-joined user and vehicle data using AlertOvervi
 """
 from __future__ import annotations
 
+from datetime import datetime
 import uuid
 from typing import NamedTuple
 
@@ -13,3 +14,7 @@ class ListAlertsOverviewQuery(NamedTuple):
     """Fetch a paginated list of alerts with pre-joined relations."""
     limit: int
     driver_id: uuid.UUID | None = None
+    vehicle_id: uuid.UUID | None = None
+    start_date: datetime | None = None
+    end_date: datetime | None = None
+

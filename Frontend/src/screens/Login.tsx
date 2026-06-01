@@ -3,12 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { Shield, Radar, TriangleAlert, Route } from "lucide-react";
 import { useAuth } from "@/auth/AuthContext";
 import type React from "react";
+import { useLanguage } from "@/i18n/LanguageContext";
 
 import { Logo } from "@/components/Logo";
 
 export function Login() {
   const { login, user } = useAuth();
   const navigate = useNavigate();
+  const { t } = useLanguage();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +48,7 @@ export function Login() {
           <div className="flex flex-col items-center gap-2 text-center">
             <Logo className="h-24 w-auto" />
             <p className="text-sm text-secondary font-medium mt-4">
-              Fleet Intelligence access for administrators and drivers.
+              {t("login.welcome")} - {t("login.desc")}
             </p>
           </div>
 
@@ -58,7 +60,7 @@ export function Login() {
 
           <form className="space-y-4" onSubmit={onSubmit}>
             <div>
-              <label className="text-[10px] font-bold uppercase text-secondary tracking-wider">Email</label>
+              <label className="text-[10px] font-bold uppercase text-secondary tracking-wider">{t("login.email")}</label>
               <input
                 type="email"
                 required
@@ -69,22 +71,22 @@ export function Login() {
               />
             </div>
             <div>
-              <label className="text-[10px] font-bold uppercase text-secondary tracking-wider">Password</label>
+              <label className="text-[10px] font-bold uppercase text-secondary tracking-wider">{t("login.password")}</label>
               <input
                 type="password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="mt-1 w-full px-4 py-2.5 rounded-lg border border-surface-container-high bg-surface-container-low text-sm focus:outline-none focus:ring-2 focus:ring-primary/15"
-                placeholder="Enter your password"
+                placeholder="••••••••"
               />
             </div>
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 rounded-lg bg-primary text-on-primary font-bold text-sm hover:opacity-90 disabled:opacity-60"
+              className="w-full py-3 rounded-lg bg-primary text-on-primary font-bold text-sm hover:opacity-90 disabled:opacity-60 cursor-pointer"
             >
-              {loading ? "Signing in..." : "Sign In"}
+              {loading ? t("login.signingIn") : t("login.btn")}
             </button>
           </form>
           </div>

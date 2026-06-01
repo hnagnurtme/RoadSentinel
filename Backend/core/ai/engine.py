@@ -10,7 +10,7 @@ from typing import Final
 logger = logging.getLogger(__name__)
 
 MODEL_PATH: Final[pathlib.Path] = (
-    pathlib.Path(__file__).parents[3] / "AI" / "model" / "best.pt"
+    pathlib.Path(__file__).parents[3] / "Simulator" / "model" / "best.pt"
 )
 
 INFER_W: Final[int] = 320

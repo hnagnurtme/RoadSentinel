@@ -51,6 +51,7 @@ def to_vehicle_response(vehicle) -> VehicleResponse:
         color=vehicle.color,
         production_year=vehicle.production_year,
         vin=vehicle.vin,
+        device_id=vehicle.device_id,
         created_at=vehicle._created_at,
         updated_at=vehicle._updated_at,
         deleted_at=vehicle._deleted_at,

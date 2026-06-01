@@ -44,12 +44,26 @@ def create_save_alert_function(
         mapped_alert_type = alert_type_mapping.get(alert_type, "SLEEPING")
         domain_alert_type = AlertType(mapped_alert_type)
 
+        from infrastructure.db.models.user.tables import DrivingSession
+        driver_id = settings.DRIVER_EVENT_FALLBACK_DRIVER_ID
+        try:
+            active_session = (
+                db.query(DrivingSession)
+                .filter(DrivingSession.status == "ACTIVE")
+                .order_by(DrivingSession._created_at.desc())
+                .first()
+            )
+            if active_session:
+                driver_id = active_session.user_id
+        except Exception as e:
+            logger.error(f"Error querying active driving session for alert: {e}")
+
         alert = handler.handle(
             CreateAlertCommand(
                 message=message,
                 alert_type=domain_alert_type,
                 device_id=settings.DRIVER_EVENT_FALLBACK_DEVICE_ID,
-                driver_id=settings.DRIVER_EVENT_FALLBACK_DRIVER_ID,
+                driver_id=driver_id,
                 vehicle_id=settings.DRIVER_EVENT_FALLBACK_VEHICLE_ID,
                 evidence_url=evidence_url,
                 latitude=None,
@@ -324,6 +338,9 @@ async def camera_websocket(websocket: WebSocket) -> None:
     try:
         while True:
             data = await websocket.receive()
+
+            if data.get("type") == "websocket.disconnect":
+                raise WebSocketDisconnect(code=data.get("code", 1000))
 
             if data.get("text"):
                 try:

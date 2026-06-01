@@ -1,3 +1,4 @@
+import uuid
 from dataclasses import dataclass
 
 
@@ -10,3 +11,4 @@ class CreateVehicleCommand:
     color: str | None = None
     production_year: int | None = None
     vin: str | None = None
+    device_id: uuid.UUID | None = None

@@ -57,8 +57,15 @@
   --color-on-primary-fixed-variant: #2f457a;
 }
 
-body {
+*, ::before, ::after {
   font-family: 'Inter', sans-serif;
+}
+
+.font-mono, .font-mono * {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
+}
+
+body {
   background-color: var(--color-background);
   color: var(--color-on-surface);
 }
@@ -161,4 +168,28 @@ body {
   color: #ffffff;
   background-color: #ef4444;
 }
+
+@keyframes spin-reverse {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(200%);
+  }
+}
+
+.animate-spin-reverse {
+  animation: spin-reverse 1.2s linear infinite;
+}
+
+.animate-shimmer {
+  animation: shimmer 1.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
 

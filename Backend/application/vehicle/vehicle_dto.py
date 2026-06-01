@@ -52,6 +52,7 @@ class CreateVehicleRequest(BaseModel):
     color: OptionalText = None
     production_year: int | None = Field(default=None, ge=1900, le=2100)
     vin: Annotated[OptionalUpperText, Field(max_length=17)] = None
+    device_id: uuid.UUID | None = None
 
 
 class VehicleResponse(BaseModel):
@@ -65,6 +66,7 @@ class VehicleResponse(BaseModel):
     color: str | None = None
     production_year: int | None = None
     vin: str | None = None
+    device_id: uuid.UUID | None = None
     created_at: datetime | None = Field(default=None, serialization_alias="_created_at")
     updated_at: datetime | None = Field(default=None, serialization_alias="_updated_at")
     deleted_at: datetime | None = Field(default=None, serialization_alias="_deleted_at")

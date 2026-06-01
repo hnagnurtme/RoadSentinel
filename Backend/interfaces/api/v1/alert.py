@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 import uuid
 
 from fastapi import APIRouter, Depends, Query
@@ -91,8 +92,11 @@ async def create_alert(
 
 @router.get("")
 def list_alerts(
-    limit: int = Query(default=20, ge=1, le=100),
+    limit: int = Query(default=20, ge=1, le=10000),
     driver_id: uuid.UUID | None = None,
+    vehicle_id: uuid.UUID | None = None,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
     overview_handler: ListAlertsOverviewHandler = Depends(
         get_list_alerts_overview_handler
     ),
@@ -103,7 +107,13 @@ def list_alerts(
         effective_driver_id = auth.user_id
 
     data = overview_handler.handle(
-        ListAlertsOverviewQuery(limit=limit, driver_id=effective_driver_id)
+        ListAlertsOverviewQuery(
+            limit=limit, 
+            driver_id=effective_driver_id, 
+            vehicle_id=vehicle_id,
+            start_date=start_date,
+            end_date=end_date,
+        )
     )
     return success_response(data=data)
 

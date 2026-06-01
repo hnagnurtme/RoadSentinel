@@ -108,16 +108,24 @@ function DashboardRoute () {
 
     return (
         <Dashboard
-            onNavigate={ ( view ) => {
+            onNavigate={ ( view, alertId, alert ) => {
                 if ( view === "alerts" ) {
-                    navigate( "/alerts" );
+                    if ( alertId ) {
+                        navigate( `/alerts/${ alertId }`, { state: { alert } } );
+                    } else {
+                        navigate( "/alerts" );
+                    }
                     return;
                 }
                 if ( view === "dashboard" ) {
                     navigate( "/dashboard" );
                     return;
                 }
-                navigate( "/alerts" );
+                if ( view === "drivers" ) {
+                    navigate( "/drivers" );
+                    return;
+                }
+                navigate( `/${view}` );
             } }
         />
     );
