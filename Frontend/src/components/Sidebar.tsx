@@ -5,6 +5,7 @@ import { AppView } from "@/App";
 import { useAuth } from "@/auth/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { Logo } from "@/components/Logo";
+import { useLanguage } from "@/i18n/LanguageContext";
 
 interface Device {
   id: string;
@@ -23,6 +24,7 @@ const WS_BASE = (import.meta.env.VITE_WS_ALERTS_URL as string | undefined)
   : "ws://localhost:8000/api/v1/ws";
 
 export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps) {
+  const { language, setLanguage, t } = useLanguage();
   const [monitorOpen, setMonitorOpen] = useState(false);
   const [devices, setDevices] = useState<Device[]>([
     { id: "esp32-cam", label: "ESP32-CAM", online: false },
@@ -118,7 +120,7 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
           )}
         >
           <LayoutDashboard className="w-5 h-5" />
-          <span className="text-sm">Dashboard</span>
+          <span className="text-sm">{t("sidebar.dashboard")}</span>
         </button>
         <button
           onClick={handleVehiclesClick}
@@ -130,7 +132,7 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
           )}
         >
           <Car className="w-5 h-5" />
-          <span className="text-sm flex-1">Vehicles</span>
+          <span className="text-sm flex-1">{t("sidebar.vehicles")}</span>
         </button>
         <button
           onClick={() => onNavigate("drivers")}
@@ -142,7 +144,7 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
           )}
         >
           <Users className="w-5 h-5" />
-          <span className="text-sm">Drivers</span>
+          <span className="text-sm">{t("sidebar.drivers")}</span>
         </button>
         <button
           onClick={() => onNavigate("alerts")}
@@ -154,7 +156,7 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
           )}
         >
           <AlertTriangle className={cn("w-5 h-5", currentView === "alerts" && "fill-current")} />
-          <span className="text-sm">Alerts</span>
+          <span className="text-sm">{t("sidebar.alerts")}</span>
         </button>
         <button
           onClick={() => onNavigate("appeals")}
@@ -166,7 +168,7 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
           )}
         >
           <MessageSquareWarning className="w-5 h-5" />
-          <span className="text-sm">Appeals</span>
+          <span className="text-sm">{t("sidebar.appeals")}</span>
         </button>
 
         {/* ── Monitor nav item ──────────────────────────────────────────── */}
@@ -180,7 +182,7 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
           )}
         >
           <Monitor className="w-5 h-5" />
-          <span className="text-sm flex-1">Monitor</span>
+          <span className="text-sm flex-1">{t("sidebar.monitor")}</span>
           {monitorOpen ? (
             <ChevronDown className="w-4 h-4 opacity-50" />
           ) : (
@@ -210,17 +212,17 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
                   <span className="text-[10px] text-secondary">
                     {device.online ? (
                       <span className="flex items-center gap-1 text-emerald-600">
-                        <Wifi className="w-2.5 h-2.5" /> Live
+                        <Wifi className="w-2.5 h-2.5" /> {t("sidebar.live")}
                       </span>
                     ) : (
                       <span className="flex items-center gap-1 text-outline">
-                        <WifiOff className="w-2.5 h-2.5" /> Offline
+                        <WifiOff className="w-2.5 h-2.5" /> {t("sidebar.offline")}
                       </span>
                     )}
                   </span>
                 </div>
                 <span className="ml-auto text-[9px] font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-wide">
-                  Connect
+                  {t("sidebar.connect")}
                 </span>
               </button>
             ))}
@@ -229,7 +231,7 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
 
         <button className="flex items-center gap-3 px-4 py-2.5 text-secondary hover:bg-surface-container-low rounded transition-all w-full text-left">
           <Settings className="w-5 h-5" />
-          <span className="text-sm font-medium">Settings</span>
+          <span className="text-sm font-medium">{t("sidebar.settings")}</span>
         </button>
       </nav>
       <div className="mt-auto flex flex-col gap-1 pt-4 border-t border-surface-container-high">
@@ -240,8 +242,34 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
         )}
         <button className="flex items-center gap-3 px-4 py-2.5 text-secondary hover:bg-surface-container-low rounded transition-all w-full text-left">
           <HelpCircle className="w-5 h-5" />
-          <span className="text-sm font-medium">Support</span>
+          <span className="text-sm font-medium">{t("sidebar.support")}</span>
         </button>
+
+        {/* Ngôn ngữ */}
+        <div className="flex items-center justify-between px-4 py-2 text-xs font-semibold text-secondary">
+          <span>Language / Ngôn ngữ</span>
+          <div className="flex gap-1 bg-surface-container rounded-lg p-0.5 border border-outline-variant/10">
+            <button
+              onClick={() => setLanguage("en")}
+              className={cn(
+                "px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all cursor-pointer",
+                language === "en" ? "bg-primary text-on-primary shadow-sm" : "hover:text-primary"
+              )}
+            >
+              EN
+            </button>
+            <button
+              onClick={() => setLanguage("vi")}
+              className={cn(
+                "px-2 py-0.5 rounded text-[10px] font-bold uppercase transition-all cursor-pointer",
+                language === "vi" ? "bg-primary text-on-primary shadow-sm" : "hover:text-primary"
+              )}
+            >
+              VI
+            </button>
+          </div>
+        </div>
+
         <button
           type="button"
           onClick={() => {
@@ -251,7 +279,7 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
           className="flex items-center gap-3 px-4 py-2.5 text-secondary hover:bg-surface-container-low rounded transition-all w-full text-left"
         >
           <LogOut className="w-5 h-5" />
-          <span className="text-sm font-medium">Logout</span>
+          <span className="text-sm font-medium">{t("sidebar.logout")}</span>
         </button>
       </div>
     </aside>
