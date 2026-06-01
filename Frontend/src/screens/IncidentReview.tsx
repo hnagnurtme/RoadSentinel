@@ -1,4 +1,4 @@
-import { ArrowLeft, AlertOctagon, CalendarDays, Car, MapPin, UserRound, Video, Paperclip, Send, Clock, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
+import { ArrowLeft, AlertOctagon, Video, Paperclip, Send, Clock, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
 import { Alert, formatAlertTypeLabel, getAlertSeverity } from "@/types/alert";
 import { useLanguage } from "@/i18n/LanguageContext";
 import React, { useState, useEffect } from "react";
@@ -178,8 +178,8 @@ export function IncidentReview({ alert, onNavigate, onBack, backLabel }: Inciden
           <section className="bg-surface-container-lowest p-4 rounded-xl ring-1 ring-outline-variant/15 shadow-sm">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="bg-surface-container-low p-3 rounded-lg ring-1 ring-outline-variant/20">
-                <p className="text-[9px] font-bold uppercase text-secondary tracking-wider mb-1 flex items-center gap-1.5">
-                  <UserRound className="w-3.5 h-3.5" /> {t("dashboard.driver")}
+                <p className="text-[9px] font-bold uppercase text-secondary tracking-wider mb-1 flex items-center">
+                  {t("dashboard.driver")}
                 </p>
                 <div className="mt-2 flex items-center gap-3">
                   {alert.user?.avatarImageUrl ? (
@@ -201,8 +201,8 @@ export function IncidentReview({ alert, onNavigate, onBack, backLabel }: Inciden
               </div>
               
               <div className="bg-surface-container-low p-3 rounded-lg ring-1 ring-outline-variant/20">
-                <p className="text-[9px] font-bold uppercase text-secondary tracking-wider mb-1 flex items-center gap-1.5">
-                  <Car className="w-3.5 h-3.5" /> {t("dashboard.vehicle")}
+                <p className="text-[9px] font-bold uppercase text-secondary tracking-wider mb-1 flex items-center">
+                  {t("dashboard.vehicle")}
                 </p>
                 <div className="mt-2 flex items-center gap-3">
                   {alert.vehicle?.vehicleImageUrl ? (
@@ -228,15 +228,15 @@ export function IncidentReview({ alert, onNavigate, onBack, backLabel }: Inciden
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 pt-3 border-t border-surface-container-high">
               <div className="bg-surface-container-low p-3 rounded-lg">
-                <p className="text-[9px] font-bold uppercase text-secondary tracking-wider mb-1 flex items-center gap-1.5">
-                  <CalendarDays className="w-3.5 h-3.5" /> {t("common.time")}
+                <p className="text-[9px] font-bold uppercase text-secondary tracking-wider mb-1 flex items-center">
+                  {t("common.time")}
                 </p>
                 <p className="text-xs font-semibold text-primary">{formatTimestamp(alert.createdAt)}</p>
               </div>
               
               <div className="bg-surface-container-low p-3 rounded-lg">
-                <p className="text-[9px] font-bold uppercase text-secondary tracking-wider mb-1 flex items-center gap-1.5">
-                  <MapPin className="w-3.5 h-3.5" /> {t("incident.geoLocation")}
+                <p className="text-[9px] font-bold uppercase text-secondary tracking-wider mb-1 flex items-center">
+                  {t("incident.geoLocation")}
                 </p>
                 <p className="text-xs font-semibold text-primary">{locationLabel(alert)}</p>
               </div>
