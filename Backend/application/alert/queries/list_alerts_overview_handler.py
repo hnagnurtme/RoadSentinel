@@ -20,7 +20,7 @@ class ListAlertsOverviewHandler:
 
     def handle(self, query: ListAlertsOverviewQuery) -> list[dict[str, Any]]:
         """Execute query against AlertOverviewView and return formatted results."""
-        limit = max(1, min(query.limit, 100))
+        limit = max(1, min(query.limit, 10000))
 
         with SessionLocal() as db:
             # Build the base query
@@ -39,6 +39,16 @@ class ListAlertsOverviewHandler:
             if query.vehicle_id is not None:
                 sql += " AND vehicle_id = :vehicle_id"
                 params["vehicle_id"] = str(query.vehicle_id)
+
+            # Add start_date filter if provided
+            if query.start_date is not None:
+                sql += " AND _created_at >= :start_date"
+                params["start_date"] = query.start_date
+
+            # Add end_date filter if provided
+            if query.end_date is not None:
+                sql += " AND _created_at <= :end_date"
+                params["end_date"] = query.end_date
 
             # Add ordering and limit
             sql += ' ORDER BY "_created_at" DESC LIMIT :limit'
