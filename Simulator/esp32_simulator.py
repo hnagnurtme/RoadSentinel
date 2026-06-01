@@ -193,13 +193,31 @@ class ESP32DeviceSimulator:
         if not finger_id.strip():
             return
 
-        # Gửi HTTP POST xác thực vân tay
+        # Gửi HTTP POST xác thực vân tay với chữ ký bảo mật HMAC
         try:
-            print(f"[SIM] Đang quét vân tay {finger_id}...")
+            import hmac
+            import hashlib
+            
+            payload = {"fingerprint_id": finger_id}
+            body_bytes = json.dumps(payload).encode('utf-8')
+            timestamp = str(time.time())
+            
+            secret_key = os.getenv("HMAC_SECRET_KEY", "roadsentinel_hmac_secret_key").encode('utf-8')
+            msg = body_bytes + timestamp.encode('utf-8')
+            signature = hmac.new(secret_key, msg, hashlib.sha256).hexdigest()
+            
+            headers = {
+                "X-Signature": signature,
+                "X-Timestamp": timestamp,
+                "Content-Type": "application/json"
+            }
+            
+            print(f"[SIM] Đang quét vân tay {finger_id} (có kèm chữ ký bảo mật)...")
             response = await asyncio.to_thread(
                 requests.post,
                 f"{self.api_url}/users/fingerprint",
-                json={"fingerprint_id": finger_id}
+                data=body_bytes,
+                headers=headers
             )
             data = response.json()
             if response.status_code == 200:

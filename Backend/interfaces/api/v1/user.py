@@ -87,10 +87,13 @@ def get_user(
     user = handler.handle(GetUserQuery(user_id=user_id))
     return success_response(data=to_user_response(user).model_dump(by_alias=True))
 
-
+import os
+import hmac
+import hashlib
+import time
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from infrastructure.db.session import get_db
 from infrastructure.db.models.user.tables import User, DrivingSession
 from datetime import datetime, timezone, date
@@ -101,10 +104,53 @@ class FingerprintRequest(BaseModel):
     fingerprint_id: str
 
 
+def verify_hmac_signature(body: bytes, signature: str, timestamp_str: str) -> bool:
+    try:
+        req_time = float(timestamp_str)
+    except ValueError:
+        return False
+    
+    current_time = time.time()
+    if abs(current_time - req_time) > 300:  # 5 minutes window
+        return False
+        
+    secret = os.getenv("HMAC_SECRET_KEY", "roadsentinel_hmac_secret_key").encode('utf-8')
+    msg = body + timestamp_str.encode('utf-8')
+    local_sig = hmac.new(secret, msg, hashlib.sha256).hexdigest()
+    
+    return hmac.compare_digest(local_sig, signature)
+
+
 @router.post("/fingerprint")
 async def process_fingerprint(
-    payload: FingerprintRequest, db: Session = Depends(get_db)
+    request: Request, db: Session = Depends(get_db)
 ):
+    body_bytes = await request.body()
+    
+    # Check HMAC signature if configured
+    hmac_required = os.getenv("SECURITY_HMAC_REQUIRED", "false").lower() == "true"
+    if hmac_required:
+        signature = request.headers.get("X-Signature")
+        timestamp = request.headers.get("X-Timestamp")
+        if not signature or not timestamp:
+            raise HTTPException(
+                status_code=401, detail="Missing X-Signature or X-Timestamp headers"
+            )
+        if not verify_hmac_signature(body_bytes, signature, timestamp):
+            raise HTTPException(
+                status_code=401, detail="Invalid HMAC signature or expired timestamp"
+            )
+            
+    # Parse payload manually
+    try:
+        import json
+        payload_dict = json.loads(body_bytes)
+        payload = FingerprintRequest(**payload_dict)
+    except Exception:
+        raise HTTPException(
+            status_code=400, detail="Invalid JSON payload"
+        )
+
     # Tìm user dựa trên ID vân tay
     user = db.query(User).filter(User.fingerprint_id == payload.fingerprint_id).first()
     if not user:
@@ -112,52 +158,82 @@ async def process_fingerprint(
             status_code=404, detail="Không tìm thấy tài xế với ID vân tay này"
         )
 
-    # Kết thúc các phiên làm việc (driving session) cũ đang ACTIVE
-    active_sessions = (
+    # Tìm session ACTIVE của user này
+    active_session = (
         db.query(DrivingSession)
         .filter(DrivingSession.user_id == user._id, DrivingSession.status == "ACTIVE")
-        .all()
+        .first()
     )
-    for s in active_sessions:
-        s.status = "COMPLETED"
-        s.ended_at = datetime.now(timezone.utc)
 
-    # Tạo phiên lái xe mới
-    new_session = DrivingSession(
-        user_id=user._id,
-        status="ACTIVE",
-        _created_at=datetime.now(timezone.utc),
-        _updated_at=datetime.now(timezone.utc),
-    )
-    db.add(new_session)
-    db.commit()
-    db.refresh(new_session)
-
-    # Gửi sự kiện qua WebSocket để frontend biết (realtime)
     import json
 
-    await frontend_mgr.broadcast(
-        json.dumps(
-            {
-                "type": "driving_session_started",
-                "data": {
-                    "driver_id": str(user._id),
-                    "driver_name": user.name or user.email,
-                    "session_id": str(new_session._id),
-                    "fingerprint_id": payload.fingerprint_id,
-                    "started_at": new_session._created_at.isoformat(),
-                },
+    if active_session:
+        # TH 1: Đã có session ACTIVE -> Thực hiện CHECK OUT (Clock-Out)
+        active_session.status = "COMPLETED"
+        active_session.ended_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(active_session)
+
+        # Gửi sự kiện qua WebSocket để frontend biết (realtime)
+        await frontend_mgr.broadcast(
+            json.dumps(
+                {
+                    "type": "driving_session_ended",
+                    "data": {
+                        "driver_id": str(user._id),
+                        "driver_name": user.name or user.email,
+                        "session_id": str(active_session._id),
+                        "fingerprint_id": payload.fingerprint_id,
+                        "ended_at": active_session.ended_at.isoformat(),
+                    },
+                }
+            )
+        )
+
+        return success_response(
+            data={
+                "message": "Đã check-out tài xế thành công (Clock-Out)",
+                "session_id": str(active_session._id),
+                "driver_name": user.name or user.email,
+                "status": "COMPLETED",
             }
         )
-    )
+    else:
+        # TH 2: Chưa có session ACTIVE -> Thực hiện CHECK IN (Clock-In)
+        new_session = DrivingSession(
+            user_id=user._id,
+            status="ACTIVE",
+            _created_at=datetime.now(timezone.utc),
+            _updated_at=datetime.now(timezone.utc),
+        )
+        db.add(new_session)
+        db.commit()
+        db.refresh(new_session)
 
-    return success_response(
-        data={
-            "message": "Đã nhận diện tài xế thành công",
-            "session_id": str(new_session._id),
-            "driver_name": user.name or user.email,
-        }
-    )
+        # Gửi sự kiện qua WebSocket để frontend biết (realtime)
+        await frontend_mgr.broadcast(
+            json.dumps(
+                {
+                    "type": "driving_session_started",
+                    "data": {
+                        "driver_id": str(user._id),
+                        "driver_name": user.name or user.email,
+                        "session_id": str(new_session._id),
+                        "fingerprint_id": payload.fingerprint_id,
+                        "started_at": new_session._created_at.isoformat(),
+                    },
+                }
+            )
+        )
+
+        return success_response(
+            data={
+                "message": "Đã check-in tài xế thành công (Clock-In)",
+                "session_id": str(new_session._id),
+                "driver_name": user.name or user.email,
+                "status": "ACTIVE",
+            }
+        )
 
 
 class UpdateUserRequest(BaseModel):

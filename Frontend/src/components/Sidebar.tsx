@@ -4,9 +4,6 @@ import { cn } from "@/lib/utils";
 import { AppView } from "@/App";
 import { useAuth } from "@/auth/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { getVehicles } from "@/api/vehicles";
-import type { Vehicle } from "@/types/vehicle";
-
 import { Logo } from "@/components/Logo";
 
 interface Device {
@@ -27,28 +24,18 @@ const WS_BASE = (import.meta.env.VITE_WS_ALERTS_URL as string | undefined)
 
 export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps) {
   const [monitorOpen, setMonitorOpen] = useState(false);
-  const [vehiclesOpen, setVehiclesOpen] = useState(false);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [devices, setDevices] = useState<Device[]>([
     { id: "esp32-cam", label: "ESP32-CAM", online: false },
   ]);
   const { logout } = useAuth();
   const navigate = useNavigate();
+  
   // Lightweight status probe: connect to /ws/frontend and listen for pong
   useEffect(() => {
     if (currentView === "monitor") {
       setMonitorOpen(true);
     }
-    if (currentView === "vehicles") {
-      setVehiclesOpen(true);
-    }
   }, [currentView]);
-
-  useEffect(() => {
-    if (vehiclesOpen && vehicles.length === 0) {
-      getVehicles(10).then(setVehicles).catch(() => {});
-    }
-  }, [vehiclesOpen, vehicles.length]);
 
   useEffect(() => {
     if (!monitorOpen) return;
@@ -102,12 +89,10 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
 
   const handleMonitorClick = () => {
     setMonitorOpen((prev: boolean) => !prev);
-    setVehiclesOpen(false);
     onNavigate("monitor");
   };
 
   const handleVehiclesClick = () => {
-    setVehiclesOpen((prev: boolean) => !prev);
     setMonitorOpen(false);
     onNavigate("vehicles");
   };
@@ -146,42 +131,7 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
         >
           <Car className="w-5 h-5" />
           <span className="text-sm flex-1">Vehicles</span>
-          {vehiclesOpen ? (
-            <ChevronDown className="w-4 h-4 opacity-50" />
-          ) : (
-            <ChevronRight className="w-4 h-4 opacity-50" />
-          )}
         </button>
-
-        {vehiclesOpen && (
-          <div className="ml-4 pl-3 border-l-2 border-surface-container-high flex flex-col gap-0.5 py-1 transition-all">
-            {vehicles.length === 0 ? (
-              <span className="text-[10px] text-secondary px-3 py-2 italic">No vehicles found</span>
-            ) : (
-              vehicles.slice(0, 5).map((v) => (
-                <button
-                  key={v.id}
-                  onClick={() => onNavigate("vehicles")}
-                  className="flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-surface-container-low transition-all w-full text-left group"
-                >
-                  <Package className="w-3.5 h-3.5 text-secondary opacity-50" />
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-xs font-bold text-primary truncate">{v.plateNumber}</span>
-                    <span className="text-[10px] text-secondary truncate">{v.manufacturer} {v.model}</span>
-                  </div>
-                </button>
-              ))
-            )}
-            {vehicles.length > 5 && (
-              <button
-                onClick={() => onNavigate("vehicles")}
-                className="text-[10px] font-bold text-primary px-3 py-1 hover:underline text-left"
-              >
-                View all vehicles...
-              </button>
-            )}
-          </div>
-        )}
         <button
           onClick={() => onNavigate("drivers")}
           className={cn(
