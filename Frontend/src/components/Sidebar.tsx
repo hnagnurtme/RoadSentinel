@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { LayoutDashboard, Car, Users, AlertTriangle, Settings, HelpCircle, LogOut, Monitor, ChevronDown, ChevronRight, Wifi, WifiOff, MessageSquareWarning, Package } from "lucide-react";
+import { LayoutDashboard, Car, Users, AlertTriangle, Settings, HelpCircle, LogOut, Monitor, ChevronDown, ChevronRight, Wifi, WifiOff, MessageSquareWarning, Package, UserRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AppView } from "@/App";
 import { useAuth } from "@/auth/AuthContext";
@@ -29,8 +29,12 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
   const [devices, setDevices] = useState<Device[]>([
     { id: "esp32-cam", label: "ESP32-CAM", online: false },
   ]);
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const navigate = useNavigate();
+  
+  const displayName = user
+    ? user.name || [user.name__given, user.name__family].filter(Boolean).join(" ") || user.email
+    : "Admin";
   
   // Lightweight status probe: connect to /ws/frontend and listen for pong
   useEffect(() => {
@@ -234,7 +238,23 @@ export function Sidebar({ currentView, onNavigate, onOpenMonitor }: SidebarProps
           <span className="text-sm font-medium">{t("sidebar.settings")}</span>
         </button>
       </nav>
-      <div className="mt-auto flex flex-col gap-1 pt-4 border-t border-surface-container-high">
+      <div className="mt-auto flex flex-col gap-2 pt-4 border-t border-surface-container-high">
+        {/* Admin Profile Summary Card */}
+        <div className="flex items-center gap-3 p-3 mb-2 bg-surface-container-low rounded-xl border border-surface-container-high">
+          <div className="w-10 h-10 rounded-full bg-surface-container border border-surface-container-high flex items-center justify-center overflow-hidden shrink-0">
+            {user?.avatar_image_url ? (
+              <img src={user.avatar_image_url} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <UserRound className="w-5 h-5 text-primary" />
+            )}
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-primary leading-tight truncate">{displayName}</p>
+            <p className="text-[10px] text-secondary font-medium mt-0.5">
+              {language === "en" ? "Admin Portal" : "Cổng quản trị"}
+            </p>
+          </div>
+        </div>
         {currentView === "incident" && (
           <button className="mx-4 mb-6 py-3 px-4 bg-primary text-on-primary font-bold rounded-lg hover:opacity-90 transition-all text-xs">
             Generate Report

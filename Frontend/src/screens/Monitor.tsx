@@ -5,6 +5,7 @@ import {
   ZapOff, Zap, Activity, Users, AlertTriangle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useLanguage } from "@/i18n/LanguageContext";
 
 const WS_BASE = (import.meta.env.VITE_WS_ALERTS_URL as string | undefined)
   ? (import.meta.env.VITE_WS_ALERTS_URL as string).replace(/\/alerts$/, "")
@@ -22,6 +23,7 @@ interface Driver {
   avatar_image_url: string | null;
   name__given: string | null;
   name__family: string | null;
+  role?: string;
 }
 
 interface Detection {
@@ -379,7 +381,9 @@ function useDrivers() {
       .then((r) => r.json())
       .then((json) => {
         const data = json?.data ?? json ?? [];
-        setDrivers(Array.isArray(data) ? data : []);
+        const allUsers = Array.isArray(data) ? data : [];
+        const filteredDrivers = allUsers.filter((u: any) => u.role === "driver");
+        setDrivers(filteredDrivers);
       })
       .catch(() => setDrivers([]))
       .finally(() => setLoading(false));
@@ -785,6 +789,7 @@ interface MonitorProps {
 }
 
 export function Monitor({ deviceId }: MonitorProps) {
+  const { language } = useLanguage();
   const { drivers, loading: driversLoading } = useDrivers();
   const [selectedDriver, setSelectedDriver] = useState<Driver | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'live'>('list');
@@ -812,11 +817,12 @@ export function Monitor({ deviceId }: MonitorProps) {
       <div>
         <h2 className="text-4xl font-black tracking-tight text-primary flex items-center gap-4">
           <Users className="w-10 h-10 text-primary" />
-          Driver Monitoring
+          LiveMonitor
         </h2>
         <p className="text-secondary text-sm mt-2 max-w-2xl">
-          Select a driver from the list below to begin real-time monitoring. 
-          The camera stream will only be activated once a specific driver is selected.
+          {language === "en"
+            ? "Select a driver from the list below to begin real-time monitoring. The camera stream will only be activated once a specific driver is selected."
+            : "Chọn một tài xế từ danh sách bên dưới để bắt đầu giám sát thời gian thực. Luồng camera sẽ chỉ được kích hoạt sau khi một tài xế cụ thể được chọn."}
         </p>
       </div>
 

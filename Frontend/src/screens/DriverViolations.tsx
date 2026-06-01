@@ -11,8 +11,8 @@ import { type Appeal, type AppealApiDto, type AppealStatus } from "@/types/appea
 import type { Alert } from "@/types/alert";
 import { formatAlertTypeLabel } from "@/types/alert";
 import { AlertSeverityBadge } from "@/features/alerts/components/AlertSeverityBadge";
-import { DriverHeader } from "@/components/DriverHeader";
 import { ImageUploader } from "@/components/ImageUploader";
+import { useLanguage } from "@/i18n/LanguageContext";
 
 function formatTs(value: string | null): string {
   if (!value) return "N/A";
@@ -26,14 +26,15 @@ function isVideoEvidence(url: string | null): boolean {
 }
 
 function appealStatusClass(status: AppealStatus): string {
-  if (status === "APPROVED") return "bg-emerald-100 text-emerald-700";
-  if (status === "REJECTED") return "bg-rose-100 text-rose-700";
-  return "bg-amber-100 text-amber-700";
+  if (status === "APPROVED") return "bg-emerald-500/10 text-emerald-600";
+  if (status === "REJECTED") return "bg-error/10 text-error";
+  return "bg-amber-500/10 text-amber-600";
 }
 
 export function DriverViolations() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { t, language } = useLanguage();
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [appealsByAlert, setAppealsByAlert] = useState<Record<string, Appeal>>({});
   const [loading, setLoading] = useState(true);
@@ -80,9 +81,11 @@ export function DriverViolations() {
   };
 
   const refreshAlerts = async () => {
+    if (!user?.id) return;
     try {
-      const alertRows = await listAlerts(50);
-      setAlerts(alertRows);
+      const alertRows = await listAlerts(50, user.id);
+      const filtered = alertRows.filter((a) => a.driverId === user.id);
+      setAlerts(filtered);
     } catch {
       setError("Unable to load violation list.");
     } finally {
@@ -91,6 +94,7 @@ export function DriverViolations() {
   };
 
   useEffect(() => {
+    if (!user?.id) return;
     let cancelled = false;
     
     refreshAlerts().catch(() => undefined);
@@ -106,7 +110,7 @@ export function DriverViolations() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [user?.id]);
 
   const getApiErrorMessage = (error: unknown): string => {
     if (error instanceof ApiError && error.responseText) {
@@ -257,18 +261,18 @@ export function DriverViolations() {
 
   return (
     <>
-      <DriverHeader />
       <div className="p-10 max-w-[1400px] space-y-6">
         <div className="flex justify-between items-end">
           <div>
             <span className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-on-surface-variant block mb-2">
-              Violation evidence
+              {t("sidebar.violations")}
             </span>
-            <h2 className="text-3xl font-black text-primary tracking-tight flex items-center gap-3">
-              <Video className="w-8 h-8" />
-              Violation Evidence
+            <h2 className="text-3xl font-black text-primary tracking-tight">
+              {t("sidebar.violations")}
             </h2>
-            <p className="text-secondary text-sm mt-1 font-medium">Only incidents linked to your account are displayed.</p>
+            <p className="text-secondary text-sm mt-1 font-medium">
+              {language === "en" ? "Only incidents linked to your account are displayed." : "Chỉ hiển thị các sự cố liên quan đến tài khoản của bạn."}
+            </p>
           </div>
         </div>
 
@@ -276,31 +280,33 @@ export function DriverViolations() {
 
         <section className="bg-surface-container-lowest rounded-xl border border-outline-variant/30 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-outline-variant/20 bg-surface-container-low/50">
-            <h3 className="text-sm font-bold text-primary uppercase tracking-wider">Violation Timeline</h3>
+            <h3 className="text-sm font-bold text-primary uppercase tracking-wider">
+              {language === "en" ? "Violation Timeline" : "Dòng thời gian vi phạm"}
+            </h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
                 <tr className="bg-surface-container-low border-b border-surface-container-high">
-                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-secondary">Timestamp</th>
-                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-secondary">Severity</th>
-                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-secondary">Violation Type</th>
-                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-secondary">Evidence</th>
-                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-secondary text-center">Preview</th>
-                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-secondary text-center">Appeal</th>
+                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-secondary">{t("common.time")}</th>
+                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-secondary">{t("dashboard.severity")}</th>
+                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-secondary">{t("incident.alertType")}</th>
+                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-secondary">{t("incident.evidence")}</th>
+                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-secondary text-center">{language === "en" ? "Preview" : "Xem trước"}</th>
+                  <th className="px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-secondary text-center">{t("sidebar.appeals")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-container-high">
                 {loading ? (
                   <tr>
                     <td className="px-6 py-10 text-secondary text-sm" colSpan={6}>
-                      Loading...
+                      {t("common.loading")}
                     </td>
                   </tr>
                 ) : alerts.length === 0 ? (
                   <tr>
                     <td className="px-6 py-10 text-secondary text-sm" colSpan={6}>
-                      No violations found.
+                      {language === "en" ? "No violations found." : "Không tìm thấy vi phạm nào."}
                     </td>
                   </tr>
                 ) : (
@@ -315,7 +321,7 @@ export function DriverViolations() {
                         <AlertSeverityBadge alertType={a.alertType} />
                       </td>
                       <td className="px-6 py-4 text-xs font-medium text-primary">{formatAlertTypeLabel(a.alertType)}</td>
-                      <td className="px-6 py-4 text-xs text-secondary">{a.evidenceUrl ? "Available" : "-"}</td>
+                      <td className="px-6 py-4 text-xs text-secondary">{a.evidenceUrl ? (language === "en" ? "Available" : "Có sẵn") : "-"}</td>
                       <td className="px-6 py-4">
                         <div className="flex justify-center">
                           {a.evidenceUrl ? (
@@ -325,10 +331,10 @@ export function DriverViolations() {
                                 event.stopPropagation();
                                 setPreviewEvidenceUrl(a.evidenceUrl);
                               }}
-                              className="inline-flex items-center gap-1.5 bg-primary text-on-primary text-[10px] font-bold uppercase px-3 py-1.5 rounded hover:opacity-90 transition-opacity"
+                              className="inline-flex items-center gap-1.5 bg-primary text-on-primary text-[10px] font-bold uppercase px-3 py-1.5 rounded hover:opacity-90 transition-opacity cursor-pointer"
                             >
                               <Video className="w-3.5 h-3.5" />
-                              View
+                              {language === "en" ? "View" : "Xem"}
                             </button>
                           ) : (
                             <span className="text-[10px] text-outline">-</span>
@@ -341,7 +347,11 @@ export function DriverViolations() {
                             <span
                               className={`inline-flex items-center rounded px-2 py-1 text-[10px] font-bold uppercase ${appealStatusClass(appealsByAlert[a.id].status)}`}
                             >
-                              {appealsByAlert[a.id].status}
+                              {appealsByAlert[a.id].status === "PENDING"
+                                ? t("appeals.pending")
+                                : appealsByAlert[a.id].status === "APPROVED"
+                                ? t("appeals.approved")
+                                : t("appeals.rejected")}
                             </span>
                           ) : (
                             <button
@@ -351,10 +361,10 @@ export function DriverViolations() {
                                 setAppealError(null);
                                 setAppealModalAlert(a);
                               }}
-                              className="inline-flex items-center gap-1.5 bg-surface-container text-primary text-[10px] font-bold uppercase px-3 py-1.5 rounded hover:bg-surface-container-high transition-colors"
+                              className="inline-flex items-center gap-1.5 bg-surface-container text-primary text-[10px] font-bold uppercase px-3 py-1.5 rounded hover:bg-surface-container-high transition-colors cursor-pointer"
                             >
                               <MessageSquareWarning className="w-3.5 h-3.5" />
-                              Submit
+                              {language === "en" ? "Submit" : "Kháng nghị"}
                             </button>
                           )}
                         </div>
@@ -378,7 +388,9 @@ export function DriverViolations() {
             onClick={(event) => event.stopPropagation()}
           >
             <div className="px-5 py-3 border-b border-outline-variant/20 flex items-center justify-between">
-              <h4 className="text-sm font-bold text-primary uppercase tracking-wider">Evidence Preview</h4>
+              <h4 className="text-sm font-bold text-primary uppercase tracking-wider">
+                {language === "en" ? "Evidence Preview" : "Xem trước bằng chứng"}
+              </h4>
               <div className="flex items-center gap-2">
                 <a
                   href={previewEvidenceUrl}
@@ -386,12 +398,12 @@ export function DriverViolations() {
                   rel="noreferrer"
                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
                 >
-                  Open Original <ExternalLink className="w-3.5 h-3.5" />
+                  {language === "en" ? "Open Original" : "Mở bản gốc"} <ExternalLink className="w-3.5 h-3.5" />
                 </a>
                 <button
                   type="button"
                   onClick={() => setPreviewEvidenceUrl(null)}
-                  className="p-1.5 rounded hover:bg-surface-container-low text-secondary"
+                  className="p-1.5 rounded hover:bg-surface-container-low text-secondary cursor-pointer"
                   aria-label="Close preview"
                 >
                   <X className="w-4 h-4" />
@@ -419,24 +431,24 @@ export function DriverViolations() {
             onClick={(event) => event.stopPropagation()}
           >
             <div className="px-5 py-3 border-b border-outline-variant/20 flex items-center justify-between">
-              <h4 className="text-sm font-bold text-primary uppercase tracking-wider">Submit Appeal</h4>
+              <h4 className="text-sm font-bold text-primary uppercase tracking-wider">{t("incident.submitAppeal")}</h4>
               <button
                 type="button"
                 onClick={() => setAppealModalAlert(null)}
-                className="p-1.5 rounded hover:bg-surface-container-low text-secondary"
+                className="p-1.5 rounded hover:bg-surface-container-low text-secondary cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
             <div className="p-5 space-y-4">
               <p className="text-sm text-secondary">
-                Alert: <span className="font-semibold text-primary">{formatAlertTypeLabel(appealModalAlert.alertType)}</span>
+                {language === "en" ? "Alert:" : "Cảnh báo:"} <span className="font-semibold text-primary">{formatAlertTypeLabel(appealModalAlert.alertType)}</span>
               </p>
 
               <div className="flex flex-col md:flex-row gap-6">
                 <div className="w-full md:w-48 shrink-0 flex flex-col">
                   <ImageUploader 
-                    label="Attachment (Optional)" 
+                    label={t("incident.uploadProof")} 
                     currentUrl={appealAttachmentUrl} 
                     onUploadSuccess={(url) => setAppealAttachmentUrl(url)} 
                   />
@@ -445,13 +457,13 @@ export function DriverViolations() {
                 <div className="flex-1 flex flex-col gap-4">
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-secondary uppercase tracking-wide">
-                      Description (Optional)
+                      {language === "en" ? "Description (Optional)" : "Mô tả giải trình (Tùy chọn)"}
                     </label>
                     <textarea
                       value={appealDescription}
                       onChange={(event) => setAppealDescription(event.target.value)}
                       rows={6}
-                      placeholder="Explain why this violation should be reviewed..."
+                      placeholder={t("incident.appealDescPlaceholder")}
                       className="w-full rounded-lg border border-outline-variant/40 bg-surface px-3 py-2 text-sm text-primary outline-none focus:ring-2 focus:ring-primary/30 resize-none h-full"
                     />
                   </div>
@@ -464,15 +476,15 @@ export function DriverViolations() {
                 </div>
               )}
 
-              <div className="flex justify-end">
+              <div className="flex justify-end pt-4 border-t border-outline-variant/10">
                 <button
                   type="button"
                   onClick={submitAppeal}
                   disabled={appealSubmitting}
-                  className="inline-flex items-center gap-2 bg-primary text-on-primary text-xs font-bold uppercase px-4 py-2 rounded-lg hover:opacity-90 disabled:opacity-60"
+                  className="inline-flex items-center gap-2 bg-primary text-on-primary text-xs font-bold uppercase px-4 py-2 rounded-lg hover:opacity-90 disabled:opacity-60 cursor-pointer shadow-sm"
                 >
                   <Send className="w-3.5 h-3.5" />
-                  {appealSubmitting ? "Submitting..." : "Send Appeal"}
+                  {appealSubmitting ? t("incident.submitting") : (language === "en" ? "Send Appeal" : "Gửi kháng nghị")}
                 </button>
               </div>
             </div>
@@ -486,7 +498,7 @@ export function DriverViolations() {
             key={toast.id} 
             className={cn(
               "min-w-[260px] rounded-lg px-4 py-3 text-xs font-semibold shadow-lg transition-all transform animate-in slide-in-from-right-full",
-              toast.type === "warning" ? "bg-rose-600 text-white" : "bg-primary text-on-primary"
+              toast.type === "warning" ? "bg-error text-on-error" : "bg-primary text-on-primary"
             )}
           >
             {toast.message}

@@ -27,7 +27,10 @@ export const translations = {
       logout: "Logout",
       live: "Live",
       offline: "Offline",
-      connect: "Connect"
+      connect: "Connect",
+      profile: "My Profile",
+      timekeeping: "Timekeeping",
+      violations: "Violation Evidence"
     },
     dashboard: {
       title: "Operations Dashboard",
@@ -182,6 +185,22 @@ export const translations = {
       uploadProof: "Upload Evidence (Optional)",
       submitting: "Submitting...",
       noAppealFound: "No appeal submitted yet."
+    },
+    driverPortal: {
+      dossier: "Driver dossier",
+      title: "My Profile",
+      subtitle: "Your driver identity information in the RoadSentinel system.",
+      editProfile: "Edit Profile",
+      editBtn: "Edit",
+      roleDriver: "Role: Driver",
+      identityId: "Identity ID",
+      violationsCardText: "Use the Violation Evidence tab to review incidents linked to your account.",
+      saving: "Saving...",
+      saveBtn: "Save Profile",
+      genderMale: "Male",
+      genderFemale: "Female",
+      genderOther: "Other",
+      selectGender: "Select Gender"
     }
   },
   vi: {
@@ -212,7 +231,10 @@ export const translations = {
       logout: "Đăng xuất",
       live: "Trực tiếp",
       offline: "Ngoại tuyến",
-      connect: "Kết nối"
+      connect: "Kết nối",
+      profile: "Hồ sơ của tôi",
+      timekeeping: "Lịch sử công ca",
+      violations: "Bằng chứng vi phạm"
     },
     dashboard: {
       title: "Hệ thống điều hành",
@@ -367,6 +389,22 @@ export const translations = {
       uploadProof: "Tải lên bằng chứng (Không bắt buộc)",
       submitting: "Đang gửi...",
       noAppealFound: "Chưa có đơn kháng nghị nào được gửi."
+    },
+    driverPortal: {
+      dossier: "Hồ sơ tài xế",
+      title: "Hồ sơ của tôi",
+      subtitle: "Thông tin định danh tài xế của bạn trong hệ thống RoadSentinel.",
+      editProfile: "Chỉnh sửa hồ sơ",
+      editBtn: "Chỉnh sửa",
+      roleDriver: "Vai trò: Tài xế",
+      identityId: "Mã định danh (Identity ID)",
+      violationsCardText: "Sử dụng tab Bằng chứng vi phạm để xem lại các sự cố liên quan đến tài khoản của bạn.",
+      saving: "Đang lưu...",
+      saveBtn: "Lưu hồ sơ",
+      genderMale: "Nam",
+      genderFemale: "Nữ",
+      genderOther: "Khác",
+      selectGender: "Chọn giới tính"
     }
   }
 } as const;

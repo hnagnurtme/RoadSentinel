@@ -3,10 +3,12 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { IncidentReview } from "@/screens/IncidentReview";
 import type { Alert } from "@/types/alert";
 import { getAlert } from "@/api/alerts";
+import { useLanguage } from "@/i18n/LanguageContext";
 
 export function DriverIncidentRoute() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { t, language } = useLanguage();
   const { alertId } = useParams<{ alertId: string }>();
   const fromState = (location.state as { alert?: Alert } | null)?.alert ?? null;
   const [alert, setAlert] = useState<Alert | null>(fromState);
@@ -37,7 +39,7 @@ export function DriverIncidentRoute() {
       alert={alert}
       onNavigate={() => navigate("/driver/violations")}
       onBack={() => navigate("/driver/violations")}
-      backLabel="Back to Violations"
+      backLabel={language === "en" ? "Back to Violations" : "Quay lại danh sách vi phạm"}
     />
   );
 }
