@@ -82,9 +82,11 @@ export function DriverViolations() {
   };
 
   const refreshAlerts = async () => {
+    if (!user?.id) return;
     try {
-      const alertRows = await listAlerts(50);
-      setAlerts(alertRows);
+      const alertRows = await listAlerts(50, user.id);
+      const filtered = alertRows.filter((a) => a.driverId === user.id);
+      setAlerts(filtered);
     } catch {
       setError("Unable to load violation list.");
     } finally {
@@ -93,6 +95,7 @@ export function DriverViolations() {
   };
 
   useEffect(() => {
+    if (!user?.id) return;
     let cancelled = false;
     
     refreshAlerts().catch(() => undefined);
@@ -108,7 +111,7 @@ export function DriverViolations() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [user?.id]);
 
   const getApiErrorMessage = (error: unknown): string => {
     if (error instanceof ApiError && error.responseText) {
