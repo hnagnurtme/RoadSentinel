@@ -1,21 +1,35 @@
 import { useEffect, useState, useMemo } from "react";
-import { Clock, ChevronDown, ChevronUp } from "lucide-react";
+import { Clock, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle, LayoutList, Calendar } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/AuthContext";
 import { DriverHeader } from "@/components/DriverHeader";
 import { getDrivingSessions, DrivingSession } from "@/api/users";
 import { useLanguage } from "@/i18n/LanguageContext";
+import { listAlerts } from "@/api/alerts";
+import type { Alert } from "@/types/alert";
+
 
 export function DriverSessions () {
     const { user } = useAuth();
     const { t, language } = useLanguage();
     const [ sessions, setSessions ] = useState<DrivingSession[]>( [] );
+    const [ alerts, setAlerts ] = useState<Alert[]>( [] );
     const [ loading, setLoading ] = useState( true );
     const [ expandedDates, setExpandedDates ] = useState<Record<string, boolean>>( {} );
+    const [ viewMode, setViewMode ] = useState<"list" | "calendar">( "list" );
+    const [ currentDate, setCurrentDate ] = useState( new Date() );
 
     useEffect( () => {
         if ( !user ) return;
-        getDrivingSessions( user.id )
-            .then( setSessions )
+        setLoading( true );
+        Promise.all([
+            getDrivingSessions( user.id ),
+            listAlerts( 100 )
+        ])
+            .then( ([ sessionRows, alertRows ]) => {
+                setSessions( sessionRows );
+                setAlerts( alertRows );
+            } )
             .catch( console.error )
             .finally( () => setLoading( false ) );
     }, [ user ] );
@@ -59,27 +73,211 @@ export function DriverSessions () {
         return `${ hours }h ${ minutes }m`;
     };
 
+    const sessionsByDate = useMemo(() => {
+        const map: Record<string, { sessions: DrivingSession[]; totalMs: number }> = {};
+        groupedSessions.forEach((group) => {
+            map[group.date] = {
+                sessions: group.sessions,
+                totalMs: group.totalMs,
+            };
+        });
+        return map;
+    }, [groupedSessions]);
+
+    const alertsByDate = useMemo(() => {
+        const map: Record<string, Alert[]> = {};
+        alerts.forEach((alert) => {
+            if (!alert.createdAt) return;
+            const d = new Date(alert.createdAt);
+            const dateStr = d.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
+            if (!map[dateStr]) {
+                map[dateStr] = [];
+            }
+            map[dateStr].push(alert);
+        });
+        return map;
+    }, [alerts]);
+
+    const daysOfWeek = language === "en" 
+        ? ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        : ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
+
+    const handlePrevMonth = () => {
+        setCurrentDate((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+    };
+
+    const handleNextMonth = () => {
+        setCurrentDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+    };
+
+    const monthLabel = useMemo(() => {
+        const monthNamesEn = [
+            "January", "February", "March", "April", "May", "June",
+            "July", "August", "September", "October", "November", "December"
+        ];
+        const monthNamesVi = [
+            "Tháng 1", "Tháng 2", "Tháng 3", "Tháng 4", "Tháng 5", "Tháng 6",
+            "Tháng 7", "Tháng 8", "Tháng 9", "Tháng 10", "Tháng 11", "Tháng 12"
+        ];
+        const name = language === "en" ? monthNamesEn[currentDate.getMonth()] : monthNamesVi[currentDate.getMonth()];
+        return `${name}, ${currentDate.getFullYear()}`;
+    }, [currentDate, language]);
+
+    const calendarCells = useMemo(() => {
+        const year = currentDate.getFullYear();
+        const month = currentDate.getMonth();
+
+        const firstDayOfMonth = new Date(year, month, 1);
+        let startDayOfWeek = firstDayOfMonth.getDay();
+        startDayOfWeek = startDayOfWeek === 0 ? 6 : startDayOfWeek - 1;
+
+        const totalDaysInMonth = new Date(year, month + 1, 0).getDate();
+
+        const cells: Array<{ day: number | null; dateStr: string | null; isCurrentMonth: boolean }> = [];
+
+        for (let i = 0; i < startDayOfWeek; i++) {
+            cells.push({ day: null, dateStr: null, isCurrentMonth: false });
+        }
+
+        for (let day = 1; day <= totalDaysInMonth; day++) {
+            const dateStr = `${String(day).padStart(2, "0")}/${String(month + 1).padStart(2, "0")}/${year}`;
+            cells.push({ day, dateStr, isCurrentMonth: true });
+        }
+
+        return cells;
+    }, [currentDate]);
+
     return (
         <>
             <DriverHeader />
             <div className="p-10 max-w-[1200px] space-y-8">
-                <div>
-                    <span className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-on-surface-variant block mb-2">
-                        {t("sidebar.timekeeping")}
-                    </span>
-                    <h2 className="text-3xl font-black text-primary tracking-tight">{t("drivers.timekeepingHistory")}</h2>
-                    <p className="text-secondary text-sm mt-1 font-medium">{t("drivers.timekeepingSubtitle")}</p>
+                <div className="flex justify-between items-end">
+                    <div>
+                        <span className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-on-surface-variant block mb-2">
+                            {t("sidebar.timekeeping")}
+                        </span>
+                        <h2 className="text-3xl font-black text-primary tracking-tight">{t("drivers.timekeepingHistory")}</h2>
+                        <p className="text-secondary text-sm mt-1 font-medium">{t("drivers.timekeepingSubtitle")}</p>
+                    </div>
+
+                    <div className="flex gap-1 bg-surface-container rounded-lg p-0.5 border border-outline-variant/10">
+                        <button
+                            onClick={() => setViewMode("list")}
+                            className={cn(
+                                "p-1.5 rounded text-[10px] font-bold uppercase transition-all cursor-pointer flex items-center gap-1.5",
+                                viewMode === "list" ? "bg-primary text-on-primary shadow-sm" : "text-secondary hover:text-primary"
+                            )}
+                            title={language === "en" ? "List View" : "Dạng danh sách"}
+                        >
+                            <LayoutList className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">{language === "en" ? "List" : "Danh sách"}</span>
+                        </button>
+                        <button
+                            onClick={() => setViewMode("calendar")}
+                            className={cn(
+                                "p-1.5 rounded text-[10px] font-bold uppercase transition-all cursor-pointer flex items-center gap-1.5",
+                                viewMode === "calendar" ? "bg-primary text-on-primary shadow-sm" : "text-secondary hover:text-primary"
+                            )}
+                            title={language === "en" ? "Calendar View" : "Dạng lịch"}
+                        >
+                            <Calendar className="w-3.5 h-3.5" />
+                            <span className="hidden sm:inline">{language === "en" ? "Calendar" : "Lịch"}</span>
+                        </button>
+                    </div>
                 </div>
 
                 { loading ? (
                     <p className="text-secondary text-sm">{language === "en" ? "Loading sessions..." : "Đang tải ca làm việc..."}</p>
+                ) : viewMode === "calendar" ? (
+                    /* Calendar View */
+                    <div className="bg-surface-container-lowest rounded-xl ring-1 ring-outline-variant/15 shadow-sm p-6 space-y-6 animate-in fade-in duration-300">
+                        {/* Calendar Selector Header */}
+                        <div className="flex items-center justify-between border-b border-surface-container-high pb-4">
+                            <h3 className="text-base font-bold text-primary">{monthLabel}</h3>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={handlePrevMonth}
+                                    className="p-1.5 rounded-lg border border-surface-container-high hover:bg-surface-container-low transition-colors cursor-pointer text-secondary hover:text-primary"
+                                >
+                                    <ChevronLeft className="w-4 h-4" />
+                                </button>
+                                <button
+                                    onClick={handleNextMonth}
+                                    className="p-1.5 rounded-lg border border-surface-container-high hover:bg-surface-container-low transition-colors cursor-pointer text-secondary hover:text-primary"
+                                >
+                                    <ChevronRight className="w-4 h-4" />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Calendar Grid */}
+                        <div className="grid grid-cols-7 gap-2">
+                            {/* Day Headers */}
+                            {daysOfWeek.map((day) => (
+                                <div key={day} className="text-center text-[10px] font-bold uppercase tracking-wider text-secondary py-1 border-b border-surface-container-high mb-1">
+                                    {day}
+                                </div>
+                            ))}
+
+                            {/* Day Cells */}
+                            {calendarCells.map((cell, idx) => {
+                                if (!cell.isCurrentMonth || !cell.dateStr) {
+                                    return (
+                                        <div
+                                            key={`empty-${idx}`}
+                                            className="bg-surface-container-low/30 aspect-square rounded-lg border border-surface-container-high/50 opacity-20"
+                                        />
+                                    );
+                                }
+
+                                const dayData = sessionsByDate[cell.dateStr];
+                                const dayAlerts = alertsByDate[cell.dateStr];
+                                const hasSessions = !!dayData;
+                                const hasAlerts = !!dayAlerts && dayAlerts.length > 0;
+
+                                return (
+                                    <div
+                                        key={cell.dateStr}
+                                        className={`aspect-square rounded-lg border p-2 flex flex-col justify-between transition-all relative ${
+                                            hasSessions
+                                                ? "bg-surface-container/60 border-primary/20 hover:border-primary/50"
+                                                : "bg-surface-container-lowest border-surface-container-high hover:border-surface-container-highest"
+                                        }`}
+                                    >
+                                        {/* Top Row: Day Number and Warning Icon */}
+                                        <div className="flex items-start justify-between">
+                                            <span className={`text-[11px] font-bold ${hasSessions ? "text-primary" : "text-secondary"}`}>
+                                                {cell.day}
+                                            </span>
+                                            {hasAlerts && (
+                                                <div 
+                                                    className="bg-error/10 text-error p-0.5 rounded-full cursor-help" 
+                                                    title={language === "en" ? `${dayAlerts.length} violation(s)` : `${dayAlerts.length} vi phạm`}
+                                                >
+                                                    <AlertTriangle className="w-3.5 h-3.5 animate-pulse" />
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Bottom Row: Working Hours */}
+                                        {hasSessions && (
+                                            <div className="text-[10px] font-black text-emerald-600 bg-emerald-500/10 px-1.5 py-0.5 rounded self-start truncate max-w-full">
+                                                {formatDuration(dayData.totalMs)}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
                 ) : groupedSessions.length === 0 ? (
                     <div className="bg-surface-container-lowest p-8 rounded-xl ring-1 ring-outline-variant/15 text-center shadow-sm">
                         <Clock className="w-12 h-12 text-outline mx-auto mb-3" />
                         <p className="text-secondary font-medium">{t("drivers.noSessions")}</p>
                     </div>
                 ) : (
-                    <div className="bg-surface-container-lowest rounded-xl ring-1 ring-outline-variant/15 shadow-sm overflow-hidden flex flex-col divide-y divide-surface-container-high">
+                    /* List View */
+                    <div className="bg-surface-container-lowest rounded-xl ring-1 ring-outline-variant/15 shadow-sm overflow-hidden flex flex-col divide-y divide-surface-container-high animate-in fade-in duration-300">
                         { groupedSessions.map( group => {
                             const isExpanded = expandedDates[ group.date ];
                             return (
