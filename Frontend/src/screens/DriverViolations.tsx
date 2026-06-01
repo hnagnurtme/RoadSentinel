@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { ExternalLink, MessageSquareWarning, Send, Video, X } from "lucide-react";
 import { createAppeal, listMyAppeals } from "@/api/appeals";
