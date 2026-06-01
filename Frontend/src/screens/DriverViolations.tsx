@@ -267,8 +267,7 @@ export function DriverViolations() {
             <span className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-on-surface-variant block mb-2">
               {t("sidebar.violations")}
             </span>
-            <h2 className="text-3xl font-black text-primary tracking-tight flex items-center gap-3">
-              <Video className="w-8 h-8" />
+            <h2 className="text-3xl font-black text-primary tracking-tight">
               {t("sidebar.violations")}
             </h2>
             <p className="text-secondary text-sm mt-1 font-medium">
