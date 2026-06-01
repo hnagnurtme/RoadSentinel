@@ -7,6 +7,7 @@ export interface VehicleApiDto {
   color: string | null;
   production_year: number | null;
   vin: string | null;
+  device_id: string | null;
   _created_at: string | null;
   _updated_at: string | null;
 }
@@ -20,6 +21,7 @@ export interface Vehicle {
   color: string | null;
   productionYear: number | null;
   vin: string | null;
+  deviceId: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -34,6 +36,7 @@ export function mapVehicleFromApi(dto: VehicleApiDto): Vehicle {
     color: dto.color,
     productionYear: dto.production_year,
     vin: dto.vin,
+    deviceId: dto.device_id || null,
     createdAt: dto._created_at,
     updatedAt: dto._updated_at,
   };

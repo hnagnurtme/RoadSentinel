@@ -46,6 +46,7 @@ def create_vehicle(
             color=payload.color,
             production_year=payload.production_year,
             vin=payload.vin,
+            device_id=payload.device_id,
         )
     )
     return success_response(data=to_vehicle_response(vehicle).model_dump(by_alias=True))

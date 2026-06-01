@@ -22,6 +22,7 @@ class VehicleRepositoryImpl(VehicleRepository):
             color=row.color,
             production_year=row.production_year,
             vin=row.vin,
+            device_id=row.device_id,
             _created_at=row._created_at,
             _updated_at=row._updated_at,
             _deleted_at=row._deleted_at,
@@ -36,6 +37,7 @@ class VehicleRepositoryImpl(VehicleRepository):
             color=vehicle.color,
             production_year=vehicle.production_year,
             vin=vehicle.vin,
+            device_id=vehicle.device_id,
         )
         self.db.add(row)
         self.db.commit()

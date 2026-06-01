@@ -16,6 +16,7 @@ export interface CreateVehiclePayload {
   color?: string;
   production_year?: number;
   vin?: string;
+  device_id?: string;
 }
 
 export async function createVehicle(payload: CreateVehiclePayload): Promise<Vehicle> {

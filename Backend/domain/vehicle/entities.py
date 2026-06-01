@@ -12,6 +12,7 @@ class VehicleEntity:
     color: str | None = None
     production_year: int | None = None
     vin: str | None = None
+    device_id: uuid.UUID | None = None
     _id: uuid.UUID | None = None
     _created_at: datetime | None = None
     _updated_at: datetime | None = None

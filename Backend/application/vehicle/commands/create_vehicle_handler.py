@@ -23,5 +23,6 @@ class CreateVehicleHandler:
             color=command.color,
             production_year=command.production_year,
             vin=command.vin,
+            device_id=command.device_id,
         )
         return self.vehicle_repository.create(vehicle)
