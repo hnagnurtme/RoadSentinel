@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Users, Fingerprint, Clock, AlertTriangle, Edit2, X, Check, Plus, ExternalLink } from "lucide-react";
-import { getUsers, updateFingerprint, getDrivingSessions, createUser, User, DrivingSession, updateUser } from "@/api/users";
+import { Users, Fingerprint, Clock, AlertTriangle, Edit2, X, Check, Plus, ExternalLink, RefreshCw } from "lucide-react";
+import { getUsers, updateFingerprint, getDrivingSessions, createUser, User, DrivingSession, updateUser, enrollFingerprint } from "@/api/users";
+import { env } from "@/config/env";
 import { listAlerts } from "@/api/alerts";
 import { Alert } from "@/types/alert";
 import { ImageUploader } from "@/components/ImageUploader";
@@ -287,9 +288,8 @@ function DriverDetails ( { driver, onUpdate }: { driver: User, onUpdate: () => v
     const [ loadingHistory, setLoadingHistory ] = useState( false );
     const navigate = useNavigate();
 
-    const [ isEditingFingerprint, setIsEditingFingerprint ] = useState( false );
-    const [ newFingerprint, setNewFingerprint ] = useState( driver.fingerprint_id || "" );
-    const [ savingFingerprint, setSavingFingerprint ] = useState( false );
+    const [ isScanning, setIsScanning ] = useState( false );
+    const [ scanError, setScanError ] = useState<string | null>( null );
 
     const [ isEditModalOpen, setIsEditModalOpen ] = useState( false );
     const [ editName, setEditName ] = useState( "" );
@@ -301,8 +301,8 @@ function DriverDetails ( { driver, onUpdate }: { driver: User, onUpdate: () => v
     const [ isSavingProfile, setIsSavingProfile ] = useState( false );
 
     useEffect( () => {
-        setNewFingerprint( driver.fingerprint_id || "" );
-        setIsEditingFingerprint( false );
+        setIsScanning( false );
+        setScanError( null );
 
         setEditName( driver.name || "" );
         setEditAvatar( driver.avatar_image_url || "" );
@@ -313,6 +313,65 @@ function DriverDetails ( { driver, onUpdate }: { driver: User, onUpdate: () => v
 
         fetchHistory();
     }, [ driver ] );
+
+    useEffect( () => {
+        if ( !isScanning ) return;
+
+        const WS_BASE = env.apiBaseUrl.replace(/^http/, "ws") + "/ws";
+        const wsUrl = `${WS_BASE}/frontend`;
+        console.log("Connecting to WebSocket to monitor enrollment:", wsUrl);
+        
+        let ws: WebSocket | null = null;
+        let pingInterval: any = null;
+
+        try {
+            ws = new WebSocket( wsUrl );
+
+            ws.onopen = () => {
+                console.log("WebSocket connected for fingerprint scanning");
+                pingInterval = setInterval( () => {
+                    if ( ws?.readyState === WebSocket.OPEN ) {
+                        ws.send( JSON.stringify( { type: "ping" } ) );
+                    }
+                }, 5000 );
+            };
+
+            ws.onmessage = ( evt ) => {
+                try {
+                    const msg = JSON.parse( evt.data );
+                    if ( msg.type === "fingerprint_updated" && msg.data?.user_id === driver.id ) {
+                        console.log("Fingerprint updated via WebSocket broadcast:", msg.data);
+                        setIsScanning( false );
+                        onUpdate();
+                    }
+                } catch ( err ) {
+                    console.error("Error parsing WebSocket message:", err);
+                }
+            };
+
+            ws.onerror = ( err ) => {
+                console.error("WebSocket scan error:", err);
+                setScanError("WebSocket connection lost. Please try again.");
+            };
+
+            ws.onclose = () => {
+                console.log("WebSocket connection closed for fingerprint scanning");
+                if ( pingInterval ) clearInterval( pingInterval );
+            };
+        } catch ( e ) {
+            console.error("Failed to establish WebSocket connection:", e);
+            setScanError("Failed to establish live WebSocket connection.");
+        }
+
+        return () => {
+            if ( ws ) {
+                if ( ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING ) {
+                    ws.close();
+                }
+            }
+            if ( pingInterval ) clearInterval( pingInterval );
+        };
+    }, [ isScanning, driver.id, onUpdate ] );
 
     const fetchHistory = async () => {
         setLoadingHistory( true );
@@ -330,17 +389,15 @@ function DriverDetails ( { driver, onUpdate }: { driver: User, onUpdate: () => v
         }
     };
 
-    const handleSaveFingerprint = async () => {
-        setSavingFingerprint( true );
+    const handleTriggerEnroll = async () => {
+        setIsScanning( true );
+        setScanError( null );
         try {
-            await updateFingerprint( driver.id, newFingerprint );
-            onUpdate();
-            setIsEditingFingerprint( false );
+            await enrollFingerprint( driver.id );
         } catch ( err ) {
-            console.error( "Failed to update fingerprint", err );
-            alert( "Failed to update fingerprint ID." );
-        } finally {
-            setSavingFingerprint( false );
+            console.error( "Failed to trigger fingerprint enrollment", err );
+            setScanError( "Failed to trigger enrollment command. Make sure Backend and Simulator/Device are running." );
+            setIsScanning( false );
         }
     };
 
@@ -389,31 +446,52 @@ function DriverDetails ( { driver, onUpdate }: { driver: User, onUpdate: () => v
                     <h2 className="text-2xl font-bold text-on-surface">{ driver.name || "Unknown Name" }</h2>
                     <p className="text-secondary mb-4">{ driver.email }</p>
 
-                    <div className="flex flex-col gap-2">
-                        <h4 className="text-sm font-bold text-secondary uppercase tracking-wider">Fingerprint ID</h4>
-                        { isEditingFingerprint ? (
-                            <div className="flex items-center gap-2">
-                                <input
-                                    type="text"
-                                    value={ newFingerprint }
-                                    onChange={ ( e ) => setNewFingerprint( e.target.value ) }
-                                    className="bg-surface-container-highest border-none rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-primary outline-none"
-                                    placeholder="Enter Fingerprint ID"
-                                />
-                                <button onClick={ handleSaveFingerprint } disabled={ savingFingerprint } className="p-1.5 bg-primary text-on-primary rounded hover:opacity-90">
-                                    <Check className="w-4 h-4" />
-                                </button>
-                                <button onClick={ () => setIsEditingFingerprint( false ) } className="p-1.5 bg-surface-container-high text-on-surface rounded hover:bg-surface-container-highest">
-                                    <X className="w-4 h-4" />
+                    <div className="flex flex-col gap-3 mt-4">
+                        <h4 className="text-sm font-bold text-secondary uppercase tracking-wider">Fingerprint Device Integration</h4>
+                        { isScanning ? (
+                            <div className="bg-surface-container-high border border-primary/20 rounded-xl p-4 flex flex-col gap-3 max-w-md">
+                                <div className="flex items-start gap-3">
+                                    <div className="p-2 bg-primary/10 text-primary rounded-lg shrink-0 animate-pulse">
+                                        <Fingerprint className="w-6 h-6" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className="font-bold text-sm text-on-surface">Scanning Fingerprint...</span>
+                                            <RefreshCw className="w-3.5 h-3.5 text-primary animate-spin" />
+                                        </div>
+                                        <p className="text-xs text-secondary mt-1 leading-relaxed">
+                                            Please place your driver's finger on the hardware or the Simulator sensor now. Follow instructions in the Simulator console.
+                                        </p>
+                                    </div>
+                                </div>
+                                { scanError && (
+                                    <div className="text-xs text-red-500 font-medium bg-red-500/5 p-2 rounded border border-red-500/10">
+                                        { scanError }
+                                    </div>
+                                ) }
+                                <button
+                                    onClick={ () => setIsScanning( false ) }
+                                    className="self-end px-3 py-1 text-xs font-bold text-red-500 border border-red-500/30 hover:bg-red-500/10 rounded-lg transition-colors"
+                                >
+                                    Cancel Scan
                                 </button>
                             </div>
                         ) : (
                             <div className="flex items-center gap-3">
-                                <span className="font-mono bg-surface-container-highest px-3 py-1 rounded text-sm">
-                                    { driver.fingerprint_id || "Not set" }
-                                </span>
-                                <button onClick={ () => setIsEditingFingerprint( true ) } className="text-primary hover:underline text-sm flex items-center gap-1">
-                                    <Edit2 className="w-3 h-3" /> Edit
+                                { driver.fingerprint_id ? (
+                                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-emerald-500/10 text-emerald-600 font-semibold" title={ driver.fingerprint_id }>
+                                        <Fingerprint className="w-4 h-4" /> Enrolled
+                                    </span>
+                                ) : (
+                                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm bg-surface-container-highest text-secondary font-medium">
+                                        <Fingerprint className="w-4 h-4" /> Not Set
+                                    </span>
+                                ) }
+                                <button
+                                    onClick={ handleTriggerEnroll }
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary text-xs font-bold rounded-lg transition-colors"
+                                >
+                                    { driver.fingerprint_id ? "Re-scan / Re-enroll" : "Register with Simulator" }
                                 </button>
                             </div>
                         ) }

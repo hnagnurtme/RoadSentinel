@@ -192,7 +192,7 @@ class UpdateFingerprintRequest(BaseModel):
 
 
 @router.patch("/{user_id}/fingerprint")
-def update_fingerprint(
+async def update_fingerprint(
     user_id: uuid.UUID, payload: UpdateFingerprintRequest, db: Session = Depends(get_db)
 ):
     user = db.query(User).filter(User._id == user_id).first()
@@ -200,7 +200,41 @@ def update_fingerprint(
         raise HTTPException(status_code=404, detail="User not found")
     user.fingerprint_id = payload.fingerprint_id
     db.commit()
+    db.refresh(user)
+
+    # Gửi sự kiện qua WebSocket để frontend biết (realtime)
+    import json
+    await frontend_mgr.broadcast(
+        json.dumps(
+            {
+                "type": "fingerprint_updated",
+                "data": {
+                    "user_id": str(user._id),
+                    "fingerprint_id": user.fingerprint_id,
+                }
+            }
+        )
+    )
+
     return success_response(data={"message": "Fingerprint updated"})
+
+
+@router.post("/{user_id}/enroll")
+async def enroll_fingerprint(
+    user_id: uuid.UUID, db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(User._id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Gửi lệnh enroll qua MQTT
+    from infrastructure.mqtt import mqtt_client
+    mqtt_client.publish(
+        "roadsentinel/commands/enroll",
+        {"user_id": str(user_id)}
+    )
+
+    return success_response(data={"message": "Enrollment command sent to device/simulator"})
 
 
 @router.get("/{user_id}/driving-sessions")

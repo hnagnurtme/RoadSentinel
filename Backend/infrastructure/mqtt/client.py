@@ -50,7 +50,10 @@ class MQTTClient:
         if not self.client or not self.enabled:
             return
 
-        full_topic = f"{settings.MQTT_TOPIC_PREFIX}/{topic_suffix}"
+        if topic_suffix.startswith("roadsentinel/"):
+            full_topic = topic_suffix
+        else:
+            full_topic = f"{settings.MQTT_TOPIC_PREFIX}/{topic_suffix}"
         if not isinstance(payload, str):
             payload = json.dumps(payload)
         

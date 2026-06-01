@@ -51,3 +51,9 @@ export async function getDrivingSessions(userId: string): Promise<DrivingSession
   const { data } = await requestJson<ApiEnvelope<DrivingSession[]>>(`${env.apiBaseUrl}/users/${userId}/driving-sessions`);
   return data;
 }
+
+export async function enrollFingerprint(userId: string): Promise<void> {
+  await requestJson(`${env.apiBaseUrl}/users/${userId}/enroll`, {
+    method: "POST",
+  });
+}

@@ -109,6 +109,7 @@ class ESP32DeviceSimulator:
 
         # Trạng thái Enroll vân tay
         self.enroll_in_progress = False
+        self.loop = None
 
     # ─── MQTT CALL BACKS ──────────────────────────────────────────────────────
     def on_mqtt_connect(self, client, userdata, flags, reason_code, properties=None):
@@ -142,7 +143,10 @@ class ESP32DeviceSimulator:
             user_id = payload.get("user_id")
             if user_id:
                 # Gửi tác vụ enroll vào event loop đang chạy
-                asyncio.run_coroutine_threadsafe(self.simulate_enrollment(user_id), asyncio.get_event_loop())
+                if self.loop:
+                    asyncio.run_coroutine_threadsafe(self.simulate_enrollment(user_id), self.loop)
+                else:
+                    print(f"{Colors.FAIL}[MQTT] Lỗi: Event loop chưa được thiết lập.{Colors.ENDC}")
 
     def set_buzzer(self, active, event=None):
         self.is_alerting = active
@@ -424,6 +428,7 @@ class ESP32DeviceSimulator:
 
     # ─── RUN RUN CONCURRENTLY ──────────────────────────────────────────────────
     async def run(self):
+        self.loop = asyncio.get_running_loop()
         # Kết nối MQTT
         print(f"[MQTT] Đang kết nối tới MQTT Broker {self.mqtt_host}:{self.mqtt_port}...")
         try:
