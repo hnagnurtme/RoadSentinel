@@ -8,6 +8,7 @@ import type { UserProfile } from "@/types/user";
 import { mapUserFromApi } from "@/types/user";
 import type { ApiEnvelope } from "@/api/http";
 import { updateUser } from "@/api/users";
+import { useLanguage } from "@/i18n/LanguageContext";
 
 function displayName(u: UserProfile): string {
   const n = [u.name__given, u.name__family].filter(Boolean).join(" ");
@@ -16,6 +17,7 @@ function displayName(u: UserProfile): string {
 
 export function DriverPortal() {
   const { token } = useAuth();
+  const { t, language } = useLanguage();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   
@@ -85,16 +87,24 @@ export function DriverPortal() {
     }
   };
 
+  const getGenderLabel = (g: string | null) => {
+    if (!g) return "—";
+    if (g.toLowerCase() === "male") return t("driverPortal.genderMale");
+    if (g.toLowerCase() === "female") return t("driverPortal.genderFemale");
+    if (g.toLowerCase() === "other") return t("driverPortal.genderOther");
+    return g;
+  };
+
   return (
     <>
       <DriverHeader />
       <div className="p-10 max-w-[1200px] space-y-8">
         <div>
           <span className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-on-surface-variant block mb-2">
-            Driver dossier
+            {t("driverPortal.dossier")}
           </span>
-          <h2 className="text-3xl font-black text-primary tracking-tight">My Profile</h2>
-          <p className="text-secondary text-sm mt-1 font-medium">Your driver identity information in the RoadSentinel system.</p>
+          <h2 className="text-3xl font-black text-primary tracking-tight">{t("driverPortal.title")}</h2>
+          <p className="text-secondary text-sm mt-1 font-medium">{t("driverPortal.subtitle")}</p>
         </div>
 
         {error && (
@@ -102,7 +112,7 @@ export function DriverPortal() {
         )}
 
         {!profile && !error && (
-          <p className="text-secondary text-sm">Loading profile...</p>
+          <p className="text-secondary text-sm">{t("common.loading")}</p>
         )}
 
         {profile && (
@@ -120,10 +130,10 @@ export function DriverPortal() {
                   setEditAddressLine1(profile.address__line1 || "");
                   setIsEditModalOpen(true);
                 }}
-                className="absolute top-6 right-6 p-2 rounded-lg bg-surface-container text-secondary hover:text-primary transition-colors flex items-center gap-2 text-sm font-semibold pr-3"
-                title="Edit Profile"
+                className="absolute top-6 right-6 p-2 rounded-lg bg-surface-container text-secondary hover:text-primary transition-colors flex items-center gap-2 text-sm font-semibold pr-3 cursor-pointer"
+                title={t("driverPortal.editProfile")}
               >
-                <Edit2 className="w-4 h-4" /> Edit
+                <Edit2 className="w-4 h-4" /> {t("driverPortal.editBtn")}
               </button>
               <div className="flex items-start gap-6">
                 {profile.avatar_image_url ? (
@@ -133,7 +143,7 @@ export function DriverPortal() {
                     className="w-28 h-28 rounded-xl object-cover ring-1 ring-outline-variant/30"
                   />
                 ) : (
-                  <div className="w-28 h-28 rounded-xl bg-primary text-on-primary flex items-center justify-center font-black text-2xl">
+                  <div className="w-28 h-28 rounded-xl bg-primary text-on-primary flex items-center justify-center font-black text-2xl animate-pulse">
                     {displayName(profile).slice(0, 2).toUpperCase()}
                   </div>
                 )}
@@ -144,26 +154,26 @@ export function DriverPortal() {
                     {profile.email}
                   </p>
                   <span className="inline-block mt-3 text-[10px] font-black uppercase tracking-widest bg-surface-container-high text-primary px-3 py-1 rounded-full">
-                    Role: driver
+                    {t("driverPortal.roleDriver")}
                   </span>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-outline-variant/15">
                 <div className="bg-surface-container-low p-4 rounded-lg">
                   <p className="text-[10px] font-bold uppercase text-secondary tracking-wider mb-1 flex items-center gap-2">
-                    <UserRound className="w-4 h-4" /> Gender
+                    <UserRound className="w-4 h-4" /> {t("drivers.gender")}
                   </p>
-                  <p className="text-sm font-semibold text-primary">{profile.gender ?? "—"}</p>
+                  <p className="text-sm font-semibold text-primary">{getGenderLabel(profile.gender)}</p>
                 </div>
                 <div className="bg-surface-container-low p-4 rounded-lg">
                   <p className="text-[10px] font-bold uppercase text-secondary tracking-wider mb-1 flex items-center gap-2">
-                    <CalendarDays className="w-4 h-4" /> Date of birth
+                    <CalendarDays className="w-4 h-4" /> {t("drivers.birthday")}
                   </p>
                   <p className="text-sm font-semibold text-primary">{profile.birthday ?? "—"}</p>
                 </div>
                 <div className="bg-surface-container-low p-4 rounded-lg md:col-span-2">
                   <p className="text-[10px] font-bold uppercase text-secondary tracking-wider mb-1 flex items-center gap-2">
-                    <MapPin className="w-4 h-4" /> Address
+                    <MapPin className="w-4 h-4" /> {t("common.status") === "Trạng thái" ? "Địa chỉ" : "Address"}
                   </p>
                   <p className="text-sm font-semibold text-primary">
                     {[profile.address__line1, profile.address__line2, profile.address__city, profile.address__country]
@@ -173,13 +183,13 @@ export function DriverPortal() {
                 </div>
               </div>
             </section>
-            <section className="lg:col-span-4 bg-primary text-white p-6 rounded-xl shadow-sm flex flex-col justify-between">
+            <section className="bg-primary text-white p-6 rounded-xl shadow-sm flex flex-col justify-between lg:col-span-4">
               <div>
-                <p className="text-[10px] font-bold opacity-70 uppercase tracking-widest">Identity ID</p>
+                <p className="text-[10px] font-bold opacity-70 uppercase tracking-widest">{t("driverPortal.identityId")}</p>
                 <p className="text-lg font-mono mt-2 break-all">{profile.id}</p>
               </div>
               <p className="text-xs text-white/80 mt-6">
-                Use the Violation Evidence tab to review incidents linked to your account.
+                {t("driverPortal.violationsCardText")}
               </p>
             </section>
           </div>
@@ -191,8 +201,8 @@ export function DriverPortal() {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-surface-container-lowest rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
             <div className="flex items-center justify-between p-6 border-b border-surface-container-high shrink-0">
-              <h2 className="text-xl font-bold">Edit Profile</h2>
-              <button onClick={() => setIsEditModalOpen(false)} className="p-2 hover:bg-surface-container-low rounded-full">
+              <h2 className="text-xl font-bold">{t("driverPortal.editProfile")}</h2>
+              <button onClick={() => setIsEditModalOpen(false)} className="p-2 hover:bg-surface-container-low rounded-full cursor-pointer">
                 <X className="w-5 h-5 text-secondary" />
               </button>
             </div>
@@ -200,7 +210,7 @@ export function DriverPortal() {
               <div className="flex flex-col md:flex-row gap-6">
                 <div className="w-full md:w-48 shrink-0 flex flex-col">
                   <ImageUploader 
-                    label="Avatar Image" 
+                    label={t("drivers.avatar")} 
                     currentUrl={editAvatar} 
                     onUploadSuccess={(url) => setEditAvatar(url)} 
                   />
@@ -208,7 +218,7 @@ export function DriverPortal() {
                 <div className="flex-1 flex flex-col gap-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="flex flex-col gap-2">
-                      <label className="text-sm font-bold text-secondary">Given Name</label>
+                      <label className="text-sm font-bold text-secondary">{t("drivers.givenName")}</label>
                       <input
                         type="text"
                         value={editGivenName}
@@ -218,7 +228,7 @@ export function DriverPortal() {
                       />
                     </div>
                     <div className="flex flex-col gap-2">
-                      <label className="text-sm font-bold text-secondary">Family Name</label>
+                      <label className="text-sm font-bold text-secondary">{t("drivers.familyName")}</label>
                       <input
                         type="text"
                         value={editFamilyName}
@@ -230,7 +240,7 @@ export function DriverPortal() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="flex flex-col gap-2">
-                      <label className="text-sm font-bold text-secondary">Date of Birth</label>
+                      <label className="text-sm font-bold text-secondary">{t("drivers.birthday")}</label>
                       <input
                         type="date"
                         value={editBirthday}
@@ -239,22 +249,22 @@ export function DriverPortal() {
                       />
                     </div>
                     <div className="flex flex-col gap-2">
-                      <label className="text-sm font-bold text-secondary">Gender</label>
+                      <label className="text-sm font-bold text-secondary">{t("drivers.gender")}</label>
                       <select
                         value={editGender}
                         onChange={e => setEditGender(e.target.value)}
                         className="bg-surface-container border border-surface-container-highest rounded-lg px-4 py-2 focus:ring-2 focus:ring-primary outline-none"
                       >
-                        <option value="">Select Gender</option>
-                        <option value="male">Male</option>
-                        <option value="female">Female</option>
-                        <option value="other">Other</option>
+                        <option value="">{t("driverPortal.selectGender")}</option>
+                        <option value="male">{t("driverPortal.genderMale")}</option>
+                        <option value="female">{t("driverPortal.genderFemale")}</option>
+                        <option value="other">{t("driverPortal.genderOther")}</option>
                       </select>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="flex flex-col gap-2">
-                      <label className="text-sm font-bold text-secondary">City</label>
+                      <label className="text-sm font-bold text-secondary">{t("drivers.city")}</label>
                       <input
                         type="text"
                         value={editCity}
@@ -264,7 +274,7 @@ export function DriverPortal() {
                       />
                     </div>
                     <div className="flex flex-col gap-2">
-                      <label className="text-sm font-bold text-secondary">Country</label>
+                      <label className="text-sm font-bold text-secondary">{t("drivers.country")}</label>
                       <input
                         type="text"
                         value={editCountry}
@@ -276,7 +286,7 @@ export function DriverPortal() {
                   </div>
                   <div className="grid grid-cols-1 gap-4">
                     <div className="flex flex-col gap-2">
-                      <label className="text-sm font-bold text-secondary">Address Line 1</label>
+                      <label className="text-sm font-bold text-secondary">{t("drivers.address")}</label>
                       <input
                         type="text"
                         value={editAddressLine1}
@@ -292,16 +302,16 @@ export function DriverPortal() {
                 <button
                   type="button"
                   onClick={() => setIsEditModalOpen(false)}
-                  className="px-4 py-2 rounded-lg font-bold text-secondary hover:bg-surface-container-high"
+                  className="px-4 py-2 rounded-lg font-bold text-secondary hover:bg-surface-container-high cursor-pointer"
                 >
-                  Cancel
+                  {t("common.cancel")}
                 </button>
                 <button
                   type="submit"
                   disabled={isSavingProfile}
-                  className="px-4 py-2 rounded-lg font-bold bg-primary text-on-primary hover:opacity-90 disabled:opacity-50"
+                  className="px-4 py-2 rounded-lg font-bold bg-primary text-on-primary hover:opacity-90 disabled:opacity-50 cursor-pointer"
                 >
-                  {isSavingProfile ? "Saving..." : "Save Profile"}
+                  {isSavingProfile ? t("driverPortal.saving") : t("driverPortal.saveBtn")}
                 </button>
               </div>
             </form>
