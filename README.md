@@ -16,6 +16,52 @@ Tài liệu này hướng dẫn cách cài đặt và vận hành hệ thống *
 
 ---
 
+## Kiến Trúc Hệ Thống (System Architecture)
+
+Dưới đây là sơ đồ kiến trúc vận hành thực tế (Production Architecture) của hệ thống khi triển khai với phần cứng nhúng vật lý trên xe (đã lược bỏ bộ giả lập Simulator phục vụ phát triển):
+
+```mermaid
+graph TD
+    subgraph Cabin["Cabin Xe (Phần Cứng Vật Lý)"]
+        CAM["ESP32-CAM <br> (OV2640 Camera)"]
+        MCU["ESP32 Controller <br> (Cảm Biến Vân Tay + Còi Buzzer)"]
+    end
+
+    subgraph Messaging["Hạ Tầng Truyền Thông"]
+        WS["WebSockets Server <br> (FastAPI)"]
+        MQTT["MQTT Broker <br> (HiveMQ Cloud)"]
+    end
+
+    subgraph Server["Máy Chủ Xử Lý (Backend & AI)"]
+        BE["FastAPI API Server <br> (Python)"]
+        AI["AI Inference Engine <br> (YOLOv8 & PyTorch)"]
+        DB[("PostgreSQL Database")]
+        Redis[("Redis Cache & Pub/Sub")]
+    end
+
+    subgraph Client["Ứng Dụng Web (Frontend)"]
+        Admin["Dashboard Quản Trị <br> (React.js + Tailwind)"]
+        Driver["Cổng Thông Tin Tài Xế <br> (React.js + Tailwind)"]
+    end
+
+    %% Luồng truyền dữ liệu
+    CAM -->|1. Stream ảnh JPEG qua WebSocket| WS
+    MCU -->|2. Check-In/Out bằng HTTP POST ký HMAC| BE
+    
+    WS -->|3. Chuyển khung ảnh| AI
+    AI -->|4. Nhận diện hành vi| Redis
+    Redis -->|5. Cập nhật sự kiện vi phạm| WS
+    WS -->|6. Đẩy dữ liệu live stream & Alert| Admin
+    
+    Redis -->|7. Kích hoạt lệnh báo động| MQTT
+    MQTT -->|8. Truyền lệnh kêu còi Sub| MCU
+    
+    BE -->|9. Đọc/Ghi dữ liệu| DB
+    BE -->|10. Truy vấn thông tin ca chạy & vi phạm| Driver
+```
+
+---
+
 ## Cấu Trúc Thư Mục Dự Án
 
 ```text
