@@ -2,7 +2,6 @@ import { useEffect, useState, useMemo } from "react";
 import { Clock, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertTriangle, LayoutList, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/AuthContext";
-import { DriverHeader } from "@/components/DriverHeader";
 import { getDrivingSessions, DrivingSession } from "@/api/users";
 import { useLanguage } from "@/i18n/LanguageContext";
 import { listAlerts } from "@/api/alerts";
@@ -149,7 +148,6 @@ export function DriverSessions () {
 
     return (
         <>
-            <DriverHeader />
             <div className="p-10 max-w-[1200px] space-y-8">
                 <div className="flex justify-between items-end">
                     <div>
