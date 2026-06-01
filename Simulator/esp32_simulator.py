@@ -3,8 +3,8 @@ esp32_simulator.py — Giả lập ESP32-CAM & ESP32 Smart Device (Còi báo + V
 
 Tính năng giả lập:
   1. ESP32-CAM: Đọc frame từ webcam, nén JPEG, gửi qua WebSocket tới Backend (/ws/camera).
-  2. Loa/Cảnh báo: Kết nối MQTT tới Broker, lắng nghe alerts. Khi có alert (sleeping, v.v.),
-     phát tiếng bíp hoặc in cảnh báo lên màn hình. Tắt khi nhận 'normal'.
+  2. Loa/Cảnh báo: Tự động tải cấu hình MQTT từ Backend/.env, kết nối tới Broker, lắng nghe alerts.
+     Khi có alert (sleeping, v.v.), in cảnh báo lên màn hình và phát tiếng bíp. Tắt khi nhận 'normal'.
   3. Cảm biến vân tay (Check/Enroll):
      - Quét vân tay (Check): Menu tương tác cho phép chọn tài xế, gửi POST xác thực tới API để bắt đầu Driving Session.
      - Đăng ký vân tay mới (Enroll): Tự động lắng nghe yêu cầu từ MQTT, hướng dẫn người dùng qua console
@@ -34,21 +34,55 @@ class Colors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-# ─── ĐỊNH NGHĨA CONFIG MẶC ĐỊNH ───────────────────────────────────────────────
-DEFAULT_WS_URL = "ws://localhost:8000/ws/camera"
-DEFAULT_API_URL = "http://localhost:8000/api/v1"
-DEFAULT_MQTT_HOST = "localhost"
-DEFAULT_MQTT_PORT = 1883
+# ─── TỰ ĐỘNG TẢI CONFIG TỪ BACKEND/.ENV ─────────────────────────────────────────
+def load_backend_env():
+    env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../Backend/.env"))
+    config = {}
+    if os.path.exists(env_path):
+        with open(env_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    config[k.strip()] = v.strip()
+    return config
+
+ENV_CONFIG = load_backend_env()
+
+# Lấy cổng Backend để cấu hình mặc định cho API/WS
+BACKEND_PORT = "8000"  # Mặc định kết nối local port 8000
+
+DEFAULT_WS_URL = f"ws://localhost:{BACKEND_PORT}/ws/camera"
+DEFAULT_API_URL = f"http://localhost:{BACKEND_PORT}/api/v1"
+
+# Cấu hình MQTT Broker lấy trực tiếp từ Backend/.env
+DEFAULT_MQTT_HOST = ENV_CONFIG.get("MQTT_BROKER", "localhost")
+try:
+    DEFAULT_MQTT_PORT = int(ENV_CONFIG.get("MQTT_PORT", 1883))
+except ValueError:
+    DEFAULT_MQTT_PORT = 1883
+
+DEFAULT_MQTT_USER = ENV_CONFIG.get("MQTT_USERNAME", "")
+DEFAULT_MQTT_PASS = ENV_CONFIG.get("MQTT_PASSWORD", "")
+DEFAULT_MQTT_TLS = ENV_CONFIG.get("MQTT_TLS_ENABLED", "false").lower() == "true"
+DEFAULT_MQTT_PREFIX = ENV_CONFIG.get("MQTT_TOPIC_PREFIX", "roadsentinel/alerts")
+
 DEFAULT_FPS = 10
 DEFAULT_QUALITY = 80
 DEFAULT_CAM = 0
 
 class ESP32DeviceSimulator:
-    def __init__(self, ws_url, api_url, mqtt_host, mqtt_port, cam_index, fps, quality):
+    def __init__(self, ws_url, api_url, mqtt_host, mqtt_port, mqtt_user, mqtt_pass, mqtt_tls, mqtt_prefix, cam_index, fps, quality):
         self.ws_url = ws_url
         self.api_url = api_url
         self.mqtt_host = mqtt_host
         self.mqtt_port = mqtt_port
+        self.mqtt_user = mqtt_user
+        self.mqtt_pass = mqtt_pass
+        self.mqtt_tls = mqtt_tls
+        self.mqtt_prefix = mqtt_prefix
         self.cam_index = cam_index
         self.fps = fps
         self.quality = quality
@@ -64,16 +98,25 @@ class ESP32DeviceSimulator:
         self.mqtt_client.on_connect = self.on_mqtt_connect
         self.mqtt_client.on_message = self.on_mqtt_message
 
+        # Cấu hình bảo mật TLS nếu bật trong env
+        if self.mqtt_tls:
+            import ssl
+            print(f"[MQTT] Đang kích hoạt kết nối bảo mật TLS...")
+            self.mqtt_client.tls_set(cert_reqs=ssl.CERT_REQUIRED)
+
+        if self.mqtt_user and self.mqtt_pass:
+            self.mqtt_client.username_pw_set(self.mqtt_user, self.mqtt_pass)
+
         # Trạng thái Enroll vân tay
         self.enroll_in_progress = False
 
     # ─── MQTT CALL BACKS ──────────────────────────────────────────────────────
     def on_mqtt_connect(self, client, userdata, flags, reason_code, properties=None):
         if reason_code == 0:
-            print(f"{Colors.OKGREEN}[MQTT] Kết nối thành công tới Broker! ✓{Colors.ENDC}")
-            client.subscribe("roadsentinel/alerts/#")
+            print(f"{Colors.OKGREEN}[MQTT] Kết nối thành công tới Broker: {self.mqtt_host}:{self.mqtt_port}! ✓{Colors.ENDC}")
+            client.subscribe(f"{self.mqtt_prefix}/#")
             client.subscribe("roadsentinel/commands/enroll")
-            print(f"{Colors.OKCYAN}[MQTT] Đã đăng ký nhận topics: alerts/# và commands/enroll{Colors.ENDC}")
+            print(f"{Colors.OKCYAN}[MQTT] Đã đăng ký nhận topics: {self.mqtt_prefix}/# và commands/enroll{Colors.ENDC}")
         else:
             print(f"{Colors.FAIL}[MQTT] Kết nối thất bại, mã lỗi: {reason_code}{Colors.ENDC}")
 
@@ -86,7 +129,7 @@ class ESP32DeviceSimulator:
             payload = {"event": payload_str}
 
         # 1. Nhận thông báo Alert để phát còi cảnh báo
-        if topic.startswith("roadsentinel/alerts/"):
+        if topic.startswith(f"{self.mqtt_prefix}/"):
             event = payload.get("event", "normal")
             if event == "normal":
                 if self.is_alerting:
@@ -98,7 +141,7 @@ class ESP32DeviceSimulator:
         elif topic == "roadsentinel/commands/enroll":
             user_id = payload.get("user_id")
             if user_id:
-                # Chạy luồng enroll không chặn (non-blocking)
+                # Gửi tác vụ enroll vào event loop đang chạy
                 asyncio.run_coroutine_threadsafe(self.simulate_enrollment(user_id), asyncio.get_event_loop())
 
     def set_buzzer(self, active, event=None):
@@ -379,39 +422,33 @@ class ESP32DeviceSimulator:
             except Exception as e:
                 print(f"Lỗi nhập lệnh: {e}")
 
-    # ─── RUN ALL TASKS ────────────────────────────────────────────────────────
-    def run(self):
+    # ─── RUN RUN CONCURRENTLY ──────────────────────────────────────────────────
+    async def run(self):
         # Kết nối MQTT
         print(f"[MQTT] Đang kết nối tới MQTT Broker {self.mqtt_host}:{self.mqtt_port}...")
         try:
             self.mqtt_client.connect(self.mqtt_host, self.mqtt_port, 60)
             self.mqtt_client.loop_start()
         except Exception as e:
-            print(f"{Colors.FAIL}[MQTT] Không thể kết nối tới MQTT broker: {e}. Cảnh báo loa sẽ bị tắt.{Colors.ENDC}")
+            print(f"{Colors.FAIL}[MQTT] Không thể kết nối tới MQTT broker: {e}. Cảnh báo loa còi sẽ bị tắt.{Colors.ENDC}")
 
-        # Tạo event loop chính
-        loop = asyncio.get_event_loop()
-        
-        # Chạy đồng thời Camera stream và User Shell
-        loop.create_task(self.stream_camera_task())
-        loop.create_task(self.user_interface_task())
+        # Chạy đồng thời Camera stream và User Shell bằng gather
+        await asyncio.gather(
+            self.stream_camera_task(),
+            self.user_interface_task()
+        )
 
-        try:
-            loop.run_forever()
-        except KeyboardInterrupt:
-            print("\n[SIM] Đang dừng...")
-        finally:
-            self.mqtt_client.loop_stop()
-            self.mqtt_client.disconnect()
-            print("[SIM] Đã ngắt kết nối. Tạm biệt!")
-
-# ─── MAIN ─────────────────────────────────────────────────────────────────────
+# ─── MAIN ENTRY POINT ─────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(description="RoadSentinel ESP32 Cam & Smart Device Simulator")
     parser.add_argument("--url", default=DEFAULT_WS_URL, help=f"WebSocket camera URL (default: {DEFAULT_WS_URL})")
     parser.add_argument("--api", default=DEFAULT_API_URL, help=f"HTTP API base URL (default: {DEFAULT_API_URL})")
     parser.add_argument("--mqtt", default=DEFAULT_MQTT_HOST, help=f"MQTT broker hostname (default: {DEFAULT_MQTT_HOST})")
     parser.add_argument("--port", type=int, default=DEFAULT_MQTT_PORT, help=f"MQTT broker port (default: {DEFAULT_MQTT_PORT})")
+    parser.add_argument("--mqtt-user", default=DEFAULT_MQTT_USER, help=f"MQTT username (loaded from env)")
+    parser.add_argument("--mqtt-pass", default=DEFAULT_MQTT_PASS, help=f"MQTT password (loaded from env)")
+    parser.add_argument("--mqtt-tls", type=bool, default=DEFAULT_MQTT_TLS, help=f"Enable MQTT TLS (loaded from env)")
+    
     parser.add_argument("--cam", type=int, default=DEFAULT_CAM, help=f"Webcam device index (default: {DEFAULT_CAM})")
     parser.add_argument("--fps", type=int, default=DEFAULT_FPS, help=f"Target FPS (default: {DEFAULT_FPS})")
     parser.add_argument("--quality", type=int, default=DEFAULT_QUALITY, help=f"JPEG compression quality (default: {DEFAULT_QUALITY})")
@@ -423,12 +460,23 @@ def main():
         api_url=args.api,
         mqtt_host=args.mqtt,
         mqtt_port=args.port,
+        mqtt_user=args.mqtt_user,
+        mqtt_pass=args.mqtt_pass,
+        mqtt_tls=args.mqtt_tls,
+        mqtt_prefix=DEFAULT_MQTT_PREFIX,
         cam_index=args.cam,
         fps=args.fps,
         quality=args.quality
     )
     
-    simulator.run()
+    try:
+        asyncio.run(simulator.run())
+    except KeyboardInterrupt:
+        print("\n[SIM] Đang dừng...")
+    finally:
+        simulator.mqtt_client.loop_stop()
+        simulator.mqtt_client.disconnect()
+        print("[SIM] Đã ngắt kết nối. Tạm biệt!")
 
 if __name__ == "__main__":
     main()
