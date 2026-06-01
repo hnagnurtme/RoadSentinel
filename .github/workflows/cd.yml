@@ -3,69 +3,47 @@ name: CI/CD
 on:
   push:
     branches: [develop, main]
-
-permissions:
-  contents: read
-  packages: write
+    paths:
+      - 'Backend/**'
+      - '.github/workflows/cd.yml'
 
 jobs:
-  prepare:
-    uses: shipyard-io/templates/.github/workflows/reusable-prepare.yml@main
-    secrets:
-      ENV_FILE_CONTENT: ${{ secrets.ENV_FILE_CONTENT }}
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
-  setup-vps:
-    needs: [prepare]
-    if: needs.prepare.outputs['init-infra'] == 'true'
-    uses: shipyard-io/templates/.github/workflows/reusable-provision-vps.yml@main
-    secrets:
-      SERVER_IP: ${{ secrets.SERVER_IP }}
-      SERVER_USER: ${{ secrets.SERVER_USER }}
-      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-      CLOUDFLARE_ORIGIN_CERT: ${{ secrets.CLOUDFLARE_ORIGIN_CERT }}
-      CLOUDFLARE_ORIGIN_KEY: ${{ secrets.CLOUDFLARE_ORIGIN_KEY }}
-      DOMAIN: ${{ secrets.DOMAIN }}
-      TRAEFIK_DASHBOARD_AUTH: ${{ secrets.TRAEFIK_DASHBOARD_AUTH }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-  setup-traefik:
-    needs: [prepare, setup-vps]
-    if: always() && needs.prepare.outputs['init-infra'] == 'true' && (needs.setup-vps.result == 'success' || needs.setup-vps.result == 'skipped')
-    uses: shipyard-io/templates/.github/workflows/reusable-upgrade-traefik.yml@main
-    secrets:
-      SERVER_IP: ${{ secrets.SERVER_IP }}
-      SERVER_USER: ${{ secrets.SERVER_USER }}
-      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-      CLOUDFLARE_ORIGIN_CERT: ${{ secrets.CLOUDFLARE_ORIGIN_CERT }}
-      CLOUDFLARE_ORIGIN_KEY: ${{ secrets.CLOUDFLARE_ORIGIN_KEY }}
-      DOMAIN: ${{ secrets.DOMAIN }}
-      TRAEFIK_DASHBOARD_AUTH: ${{ secrets.TRAEFIK_DASHBOARD_AUTH }}
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-  deploy:
-    needs: [prepare, setup-traefik]
-    if: always() && (needs.setup-traefik.result == 'success' || needs.setup-traefik.result == 'skipped')
-    uses: shipyard-io/templates/.github/workflows/reusable-deploy-ssh.yml@main
-    with:
-      app-name: ${{ needs.prepare.outputs['app-name'] }}
-      image-tag: 'full'
-      compose-file: 'Devops/Backend/docker-compose.prod.yml'
-    secrets:
-      SERVER_IP: ${{ secrets.SERVER_IP }}
-      SERVER_USER: ${{ secrets.SERVER_USER }}
-      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-      ENV_FILE_CONTENT: ${{ secrets.ENV_FILE_CONTENT }}
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/roadsentinel-backend
+          tags: |
+            type=ref,event=branch
+            type=sha,format=short
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=full
 
-  notify:
-    needs: [prepare, deploy]
-    if: always()
-    uses: shipyard-io/templates/.github/workflows/reusable-notify.yml@main
-    with:
-      app-name: ${{ needs.prepare.outputs['app-name'] }}
-      app-domain: ${{ needs.prepare.outputs['app-domain'] }}
-      status: ${{ needs.deploy.result }}
-      commit-message: ${{ github.event.head_commit.message }}
-      actor: ${{ github.actor }}
-    secrets:
-      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: Backend
+          file: Backend/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            WITH_AI=true
