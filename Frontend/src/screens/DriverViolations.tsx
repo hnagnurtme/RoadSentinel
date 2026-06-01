@@ -11,7 +11,6 @@ import { type Appeal, type AppealApiDto, type AppealStatus } from "@/types/appea
 import type { Alert } from "@/types/alert";
 import { formatAlertTypeLabel } from "@/types/alert";
 import { AlertSeverityBadge } from "@/features/alerts/components/AlertSeverityBadge";
-import { DriverHeader } from "@/components/DriverHeader";
 import { ImageUploader } from "@/components/ImageUploader";
 import { useLanguage } from "@/i18n/LanguageContext";
 
@@ -262,7 +261,6 @@ export function DriverViolations() {
 
   return (
     <>
-      <DriverHeader />
       <div className="p-10 max-w-[1400px] space-y-6">
         <div className="flex justify-between items-end">
           <div>
