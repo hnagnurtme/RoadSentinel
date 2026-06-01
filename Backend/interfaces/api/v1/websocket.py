@@ -325,6 +325,9 @@ async def camera_websocket(websocket: WebSocket) -> None:
         while True:
             data = await websocket.receive()
 
+            if data.get("type") == "websocket.disconnect":
+                raise WebSocketDisconnect(code=data.get("code", 1000))
+
             if data.get("text"):
                 try:
                     msg = json.loads(data["text"])
