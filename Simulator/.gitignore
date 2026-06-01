@@ -44,3 +44,6 @@ temp/
 runs/
 outputs/
 predictions/
+
+# Allow model/best.pt
+!model/best.pt
