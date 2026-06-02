@@ -8,6 +8,7 @@ import { ImageUploader } from "@/components/ImageUploader";
 import { listAlerts } from "@/api/alerts";
 import type { Alert } from "@/types/alert";
 import { useLanguage } from "@/i18n/LanguageContext";
+import { LoadingRadar } from "@/components/LoadingRadar";
 
 function calculateDuration(startStr: string, endStr?: string | null): string {
     const start = new Date(startStr);
@@ -190,7 +191,7 @@ function VehicleDetails({ vehicle, onClose }: { vehicle: Vehicle; onClose: () =>
                     </h3>
                     <div className="bg-surface-container rounded-xl overflow-hidden">
                         { loading ? (
-                            <div className="p-4 text-center text-secondary text-xs">{t("common.loading")}</div>
+                            <LoadingRadar message={t("common.loading")} minHeight="min-h-[200px]" />
                         ) : history.length === 0 ? (
                             <div className="p-4 text-center text-secondary text-xs">{t("vehicles.noLog")}</div>
                         ) : (
@@ -352,7 +353,7 @@ export function AdminVehicles() {
         <div className="w-1/3 border-r border-surface-container-high overflow-y-auto bg-surface-container-lowest/50 flex flex-col">
           <div className="flex-1 overflow-y-auto divide-y divide-surface-container-high">
             {loading ? (
-              <div className="p-8 text-center text-secondary text-sm">{t("vehicles.loadingVehicles")}</div>
+              <LoadingRadar message={t("vehicles.loadingVehicles")} minHeight="min-h-[400px]" />
             ) : filteredVehicles.length === 0 ? (
               <div className="p-8 text-center text-secondary text-sm">{t("vehicles.noVehicles")}</div>
             ) : (

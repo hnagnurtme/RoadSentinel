@@ -1,6 +1,7 @@
 import { ArrowLeft, AlertOctagon, Video, Paperclip, Send, Clock, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
 import { Alert, formatAlertTypeLabel, getAlertSeverity } from "@/types/alert";
 import { useLanguage } from "@/i18n/LanguageContext";
+import { LoadingRadar } from "@/components/LoadingRadar";
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/auth/AuthContext";
 import { createAppeal, listMyAppeals, listAppealsAdmin } from "@/api/appeals";
@@ -300,8 +301,8 @@ export function IncidentReview({ alert, onNavigate, onBack, backLabel }: Inciden
             </h4>
 
             {loadingAppeal ? (
-              <div className="bg-surface-container rounded-xl p-4 text-center text-xs text-secondary">
-                {t("common.loading")}
+              <div className="bg-surface-container rounded-xl overflow-hidden">
+                <LoadingRadar message={t("common.loading")} minHeight="min-h-[150px]" />
               </div>
             ) : appeal ? (
               <div className="bg-surface-container rounded-xl p-4 flex flex-col gap-3 shadow-sm border border-outline-variant/10">

@@ -10,6 +10,7 @@ import { useLanguage } from "@/i18n/LanguageContext";
 import type { Appeal } from "@/types/appeal";
 import { listAppealsAdmin } from "@/api/appeals";
 import { calculateSafetyScore, getSafetyScoreLabel } from "@/utils/safetyScore";
+import { LoadingRadar } from "@/components/LoadingRadar";
 
 export function AdminDrivers () {
     const { t, language } = useLanguage();
@@ -130,7 +131,7 @@ export function AdminDrivers () {
                 {/* Driver List */ }
                 <div className="w-1/3 border-r border-surface-container-high overflow-y-auto bg-surface-container-lowest/50">
                     { loading ? (
-                        <div className="p-8 text-center text-secondary">{t("drivers.loadingDrivers")}</div>
+                        <LoadingRadar message={t("drivers.loadingDrivers")} minHeight="min-h-[400px]" />
                     ) : filteredDrivers.length === 0 ? (
                         <div className="p-8 text-center text-secondary">{t("drivers.noDrivers")}</div>
                     ) : (
@@ -600,7 +601,7 @@ function DriverDetails ( { driver, onUpdate, allAlerts, allAppeals }: { driver: 
                     </h3>
                     <div className="bg-surface-container rounded-xl overflow-hidden">
                         { loadingHistory ? (
-                            <div className="p-4 text-center text-secondary text-xs">{t("common.loading")}</div>
+                            <LoadingRadar message={t("common.loading")} minHeight="min-h-[200px]" />
                         ) : sessions.length === 0 ? (
                             <div className="p-4 text-center text-secondary text-xs">{t("drivers.noSessions")}</div>
                         ) : (
@@ -652,7 +653,7 @@ function DriverDetails ( { driver, onUpdate, allAlerts, allAppeals }: { driver: 
                     </h3>
                     <div className="bg-surface-container rounded-xl overflow-hidden">
                         { loadingHistory ? (
-                            <div className="p-4 text-center text-secondary text-xs">{t("common.loading")}</div>
+                            <LoadingRadar message={t("common.loading")} minHeight="min-h-[200px]" />
                         ) : alerts.length === 0 ? (
                             <div className="p-4 text-center text-secondary text-xs">{language === "en" ? "No violations found." : "Không có vi phạm nào."}</div>
                         ) : (

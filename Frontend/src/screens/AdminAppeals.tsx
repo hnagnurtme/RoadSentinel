@@ -10,6 +10,7 @@ import { Check, X, Paperclip, MessageSquareWarning, ExternalLink, Search } from 
 import { formatAlertTypeLabel } from "@/types/alert";
 import { useLanguage } from "@/i18n/LanguageContext";
 import { calculateSafetyScore, getSafetyScoreLabel } from "@/utils/safetyScore";
+import { LoadingRadar } from "@/components/LoadingRadar";
 
 function formatTs(value: string | null): string {
   if (!value) return "N/A";
@@ -310,7 +311,7 @@ export function AdminAppeals() {
 
           <div className="flex-1 overflow-y-auto divide-y divide-surface-container-high">
             {loading ? (
-              <div className="p-8 text-center text-secondary text-sm">{t("common.loading")}</div>
+              <LoadingRadar message={t("common.loading")} minHeight="min-h-[400px]" />
             ) : processedAppeals.length === 0 ? (
               <div className="p-8 text-center text-secondary text-sm">
                 {t("appeals.noAppealsFound")}
