@@ -13,6 +13,7 @@ import { formatAlertTypeLabel } from "@/types/alert";
 import { AlertSeverityBadge } from "@/features/alerts/components/AlertSeverityBadge";
 import { ImageUploader } from "@/components/ImageUploader";
 import { useLanguage } from "@/i18n/LanguageContext";
+import { LoadingRadar } from "@/components/LoadingRadar";
 
 function formatTs(value: string | null): string {
   if (!value) return "N/A";
@@ -299,8 +300,8 @@ export function DriverViolations() {
               <tbody className="divide-y divide-surface-container-high">
                 {loading ? (
                   <tr>
-                    <td className="px-6 py-10 text-secondary text-sm" colSpan={6}>
-                      {t("common.loading")}
+                    <td className="px-6 py-10" colSpan={6}>
+                      <LoadingRadar message={t("common.loading")} minHeight="min-h-[250px]" />
                     </td>
                   </tr>
                 ) : alerts.length === 0 ? (

@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/auth/AuthContext";
 import { getDrivingSessions, DrivingSession } from "@/api/users";
 import { useLanguage } from "@/i18n/LanguageContext";
+import { LoadingRadar } from "@/components/LoadingRadar";
 import { listAlerts } from "@/api/alerts";
 import type { Alert } from "@/types/alert";
 
@@ -185,7 +186,7 @@ export function DriverSessions () {
                 </div>
 
                 { loading ? (
-                    <p className="text-secondary text-sm">{language === "en" ? "Loading sessions..." : "Đang tải ca làm việc..."}</p>
+                    <LoadingRadar message={language === "en" ? "Loading sessions..." : "Đang tải ca làm việc..."} />
                 ) : viewMode === "calendar" ? (
                     /* Calendar View */
                     <div className="bg-surface-container-lowest rounded-xl ring-1 ring-outline-variant/15 shadow-sm p-6 space-y-6 animate-in fade-in duration-300">

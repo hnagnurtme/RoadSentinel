@@ -8,6 +8,7 @@ import { mapUserFromApi } from "@/types/user";
 import type { ApiEnvelope } from "@/api/http";
 import { updateUser } from "@/api/users";
 import { useLanguage } from "@/i18n/LanguageContext";
+import { LoadingRadar } from "@/components/LoadingRadar";
 import { listAlerts } from "@/api/alerts";
 import { listMyAppeals } from "@/api/appeals";
 import { calculateSafetyScore, getSafetyScoreLabel } from "@/utils/safetyScore";
@@ -142,7 +143,7 @@ export function DriverPortal() {
         )}
 
         {!profile && !error && (
-          <p className="text-secondary text-sm">{t("common.loading")}</p>
+          <LoadingRadar message={t("common.loading")} />
         )}
 
         {profile && (
