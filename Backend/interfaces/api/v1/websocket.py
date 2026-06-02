@@ -359,7 +359,26 @@ async def appeals_websocket(websocket: WebSocket) -> None:
 async def camera_websocket(websocket: WebSocket) -> None:
     await camera_mgr.connect(websocket)
 
+    from infrastructure.db.session import SessionLocal
+    from infrastructure.db.models.user.tables import DrivingSession
+
     processor = CameraFrameProcessor()
+
+    try:
+        with SessionLocal() as db:
+            active_session = (
+                db.query(DrivingSession)
+                .filter(DrivingSession.status == "ACTIVE")
+                .first()
+            )
+            if active_session:
+                processor.active_driver_id = str(active_session.user_id)
+                camera_mgr.active_driver_id = str(active_session.user_id)
+                logger.info(f"[Camera WS] Restored active driver ID from DB: {camera_mgr.active_driver_id}")
+    except Exception as e:
+        logger.error(f"Error querying active session on camera connect: {e}")
+
+    await frontend_mgr.broadcast_auth_update()
     frame_idx: int = 0
     t_last_log: float = time.time()
     last_alert_sent_at: dict[str, float] = {}
