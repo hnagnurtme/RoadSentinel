@@ -86,7 +86,7 @@ type WsMessage = FrameMessage | PongMessage | AlertCreatedMessage | { type: stri
 
 // ─── Hook: useCameraStream ────────────────────────────────────────────────────
 
-function useCameraStream(deviceId: string) {
+function useCameraStream(deviceId: string, driverId?: string) {
   const [isConnected, setIsConnected] = useState(false);
   const [cameraOnline, setCameraOnline] = useState(false);
   const [viewers, setViewers] = useState(0);
@@ -96,6 +96,7 @@ function useCameraStream(deviceId: string) {
   const [detections, setDetections] = useState<Detection[]>([]);
   const [eventTiming, setEventTiming] = useState<FrameMessage["event_timing"] | null>(null);
   const [liveAlerts, setLiveAlerts] = useState<LiveViolationAlert[]>([]);
+  const [isAuthorized, setIsAuthorized] = useState(true);
 
   const wsRef = useRef<WebSocket | null>(null);
   const frameTimestamps = useRef<number[]>([]);
@@ -119,7 +120,10 @@ function useCameraStream(deviceId: string) {
   const connect = useCallback(() => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
 
-    const ws = new WebSocket(`${WS_BASE}/frontend`);
+    const url = driverId 
+      ? `${WS_BASE}/frontend?driver_id=${driverId}` 
+      : `${WS_BASE}/frontend`;
+    const ws = new WebSocket(url);
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -198,9 +202,12 @@ function useCameraStream(deviceId: string) {
           setTotalFrames(totalFramesRef.current);
         }
       } else if (data.type === "pong") {
-        const pong = data as PongMessage;
+        const pong = data as PongMessage & { authorized?: boolean };
         setCameraOnline(pong.camera);
         setViewers(pong.clients);
+        if (pong.authorized !== undefined) {
+          setIsAuthorized(pong.authorized);
+        }
       } else if (data.type === "alert_created") {
         // Debounce rapid alert processing to prevent UI overload
         const now = Date.now();
@@ -273,7 +280,7 @@ function useCameraStream(deviceId: string) {
     ws.onerror = () => {
       ws.close();
     };
-  }, [deviceId]);
+  }, [deviceId, driverId]);
 
   useEffect(() => {
     connect();
@@ -352,6 +359,7 @@ function useCameraStream(deviceId: string) {
     setDetections([]);
     setEventTiming(null);
     setLiveAlerts([]);
+    setIsAuthorized(true);
     setTimeout(connect, 300);
   }, [connect]);
 
@@ -366,6 +374,7 @@ function useCameraStream(deviceId: string) {
     eventTiming,
     liveAlerts,
     reconnect,
+    isAuthorized,
   };
 }
 
@@ -399,9 +408,10 @@ interface LiveCanvasProps {
   detections: Detection[];
   cameraOnline: boolean;
   isConnected: boolean;
+  isAuthorized: boolean;
 }
 
-function LiveCanvas({ jpeg, detections, cameraOnline, isConnected }: LiveCanvasProps) {
+function LiveCanvas({ jpeg, detections, cameraOnline, isConnected, isAuthorized }: LiveCanvasProps) {
   const frameCanvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const imgRef = useRef(new Image());
@@ -542,20 +552,24 @@ function LiveCanvas({ jpeg, detections, cameraOnline, isConnected }: LiveCanvasP
         height={240}
         className="absolute inset-0 w-full h-full object-contain pointer-events-none"
       />
-      {/* Overlay when offline */}
-      {(!isConnected || !cameraOnline) && (
+      {/* Overlay when offline or unauthorized */}
+      {(!isConnected || !cameraOnline || !isAuthorized) && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 gap-3">
           <CameraOff className="w-12 h-12 text-outline/50" />
           <p className="text-sm font-semibold text-outline/70">
-            {!isConnected ? "Connecting to server…" : "Camera offline"}
+            {!isConnected 
+              ? "Connecting to server…" 
+              : !isAuthorized 
+                ? "Không kết nối (Tài xế không online)" 
+                : "Camera offline"}
           </p>
-          {isConnected && !cameraOnline && (
+          {isConnected && !cameraOnline && isAuthorized && (
             <p className="text-xs text-outline/50">Waiting for ESP32-CAM to connect</p>
           )}
         </div>
       )}
       {/* Live badge */}
-      {cameraOnline && (
+      {cameraOnline && isAuthorized && (
         <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm px-2.5 py-1 rounded-full">
           <span className="relative flex h-2 w-2">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
@@ -616,7 +630,8 @@ function LiveMonitorView({ deviceId, selectedDriver, onBack }: LiveMonitorViewPr
     eventTiming,
     liveAlerts,
     reconnect,
-  } = useCameraStream(deviceId);
+    isAuthorized,
+  } = useCameraStream(deviceId, selectedDriver._id);
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastAlertIdRef = useRef<string | null>(null);
@@ -724,15 +739,15 @@ function LiveMonitorView({ deviceId, selectedDriver, onBack }: LiveMonitorViewPr
             </h3>
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-surface-container-low/50 rounded-lg p-3 text-center">
-                <p className="text-2xl font-black tabular-nums text-primary">{fps}</p>
+                <p className="text-2xl font-black tabular-nums text-primary">{isAuthorized ? fps : 0}</p>
                 <p className="text-[9px] font-bold text-outline uppercase tracking-wider mt-0.5">FPS</p>
               </div>
               <div className="bg-surface-container-low/50 rounded-lg p-3 text-center">
-                <p className="text-2xl font-black tabular-nums text-primary">{viewers}</p>
+                <p className="text-2xl font-black tabular-nums text-primary">{isAuthorized ? viewers : 0}</p>
                 <p className="text-[9px] font-bold text-outline uppercase tracking-wider mt-0.5">Viewers</p>
               </div>
               <div className="col-span-2 bg-surface-container-low/50 rounded-lg p-3 text-center">
-                <p className="text-xl font-black tabular-nums text-primary">{totalFrames.toLocaleString()}</p>
+                <p className="text-xl font-black tabular-nums text-primary">{isAuthorized ? totalFrames.toLocaleString() : 0}</p>
                 <p className="text-[9px] font-bold text-outline uppercase tracking-wider mt-0.5">Total Frames</p>
               </div>
             </div>
@@ -745,8 +760,14 @@ function LiveMonitorView({ deviceId, selectedDriver, onBack }: LiveMonitorViewPr
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-bold text-outline uppercase">Camera</span>
-                <span className={cn("text-[10px] font-black uppercase", cameraOnline ? "text-emerald-600" : "text-red-500")}>
-                  {cameraOnline ? "Online" : "Waiting"}
+                <span className={cn("text-[10px] font-black uppercase", (cameraOnline && isAuthorized) ? "text-emerald-600" : "text-red-500")}>
+                  {(cameraOnline && isAuthorized) ? "Online" : "Waiting"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-outline uppercase">Driver Status</span>
+                <span className={cn("text-[10px] font-black uppercase", isAuthorized ? "text-emerald-600" : "text-red-500")}>
+                  {isAuthorized ? "Active (Online)" : "Offline"}
                 </span>
               </div>
             </div>
@@ -759,7 +780,7 @@ function LiveMonitorView({ deviceId, selectedDriver, onBack }: LiveMonitorViewPr
             <div className="px-5 py-3.5 border-b border-surface-container-high bg-surface-container-low/30 flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <span className="text-xs font-bold text-primary uppercase tracking-wider">Live Feed</span>
-                <EventTimingPanel eventTiming={eventTiming} />
+                <EventTimingPanel eventTiming={isAuthorized ? eventTiming : null} />
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-bold text-outline bg-surface-container px-2 py-0.5 rounded font-mono">
@@ -773,6 +794,7 @@ function LiveMonitorView({ deviceId, selectedDriver, onBack }: LiveMonitorViewPr
                 detections={detections}
                 cameraOnline={cameraOnline}
                 isConnected={isConnected}
+                isAuthorized={isAuthorized}
               />
             </div>
           </div>

@@ -13,29 +13,74 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <esp_now.h>
 #include <esp_camera.h>
 #include <WebSocketsClient.h>   // arduinoWebSockets by Links2004
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
 
+// ─── Driver Info Struct (matching ESP32-Device) ──────────────────────────────
+struct DriverInfoMsg {
+  char driver_id[37];
+  char driver_name[33];
+  char status[12];
+};
+
+// ─── Driver State (ESP-NOW to WebSocket sync) ──────────────────────────────────
+static char            active_driver_id[37] = "";
+static char            active_driver_name[33] = "";
+static volatile bool   driver_active = false;
+
+// Flags to trigger sending message in the WebSocket task context
+static volatile bool   pending_ws_login_send = false;
+static volatile bool   pending_ws_logout_send = false;
+
+static void onDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len) {
+    if (len == sizeof(DriverInfoMsg)) {
+        DriverInfoMsg msg;
+        memcpy(&msg, incomingData, sizeof(msg));
+        
+        Serial.printf("[ESP-NOW] Received: driver_id=%s, name=%s, status=%s\n", msg.driver_id, msg.driver_name, msg.status);
+        
+        if (strcmp(msg.status, "ACTIVE") == 0) {
+            strncpy(active_driver_id, msg.driver_id, sizeof(active_driver_id) - 1);
+            active_driver_id[sizeof(active_driver_id) - 1] = '\0';
+            strncpy(active_driver_name, msg.driver_name, sizeof(active_driver_name) - 1);
+            active_driver_name[sizeof(active_driver_name) - 1] = '\0';
+            driver_active = true;
+            pending_ws_login_send = true;
+            pending_ws_logout_send = false;
+        } else {
+            active_driver_id[0] = '\0';
+            active_driver_name[0] = '\0';
+            driver_active = false;
+            pending_ws_login_send = false;
+            pending_ws_logout_send = true;
+        }
+    } else {
+        Serial.printf("[ESP-NOW] Received packet with invalid size: %d (expected %d)\n", len, sizeof(DriverInfoMsg));
+    }
+}
+
 // ─── Wi-Fi credentials ────────────────────────────────────────────────────────
 static const char* WIFI_SSID = "37 Ngo Van So";
 static const char* WIFI_PASS = "987654321";
 
 // ─── Server ───────────────────────────────────────────────────────────────────
-static const char*    WS_HOST = "192.168.1.188";
-static const uint16_t WS_PORT = 8000;
-static const char*    WS_PATH = "/ws/camera";
+static String         ws_host = "road-sentinel.trunganh.tech";
+static uint16_t       ws_port = 443;
+static String         ws_path = "/api/v1/ws/camera";
+static bool           ws_use_ssl = true;
 
 // ─── Tuning ───────────────────────────────────────────────────────────────────
 // Ưu tiên chất lượng ảnh hơn tốc độ
-static const framesize_t FRAME_SIZE        = FRAMESIZE_HVGA;   // 480x320 (Giảm độ phân giải để tránh nghẽn mạng gây delay)
-static const int         JPEG_QUALITY      = 15;               // Tăng số = giảm dung lượng ảnh (ảnh nhẹ gửi nhanh hơn)
+static const framesize_t FRAME_SIZE        = FRAMESIZE_QVGA;   // 320x240 (Giảm độ phân giải để tránh nghẽn mạng gây delay)
+static const int         JPEG_QUALITY      = 12;               // Giảm số = tăng chất lượng ảnh (số thấp hơn cho ảnh nét hơn)
 static const uint32_t    CAPTURE_INTERVAL_MS = 40;             // ~25 fps target (thực tế và ổn định hơn)
 
-// Queue depth: 2 frame là đủ (double-buffer). Tăng lên 3 nếu WiFi jitter cao.
-static const int QUEUE_DEPTH = 2;
+// Queue depth: Chỉ cần 1 frame (để đảm bảo không bị trễ thời gian, frame mới sẽ ghi đè lên frame cũ ngay lập tức)
+static const int QUEUE_DEPTH = 1;
 
 // ─── AI Thinker ESP32-CAM pins ───────────────────────────────────────────────
 #define PWDN_GPIO_NUM     32
@@ -102,8 +147,15 @@ static void onWebSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
         case WStype_CONNECTED:
             ws_connected = true;
             last_sent_ms = millis();
-            Serial.printf("[WS] Connected to ws://%s:%d%s\n", WS_HOST, WS_PORT, WS_PATH);
+            Serial.printf("[WS] Connected to %s://%s:%d%s\n",
+                          ws_use_ssl ? "wss" : "ws", ws_host.c_str(), ws_port, ws_path.c_str());
             ws.sendTXT("{\"type\":\"hello\",\"device\":\"esp32-cam\",\"mode\":\"high-fps\"}");
+            if (driver_active) {
+                char ws_msg[128];
+                snprintf(ws_msg, sizeof(ws_msg), "{\"type\":\"driver_login\",\"driver_id\":\"%s\"}", active_driver_id);
+                ws.sendTXT(ws_msg);
+                Serial.printf("[WS] Restored active driver: %s\n", active_driver_id);
+            }
             break;
 
         case WStype_DISCONNECTED:
@@ -316,12 +368,17 @@ static void wsTask(void* arg) {
     // Chờ WiFi sẵn sàng
     while (!wifi_ready) vTaskDelay(pdMS_TO_TICKS(100));
 
-    ws.begin(WS_HOST, WS_PORT, WS_PATH);
+    if (ws_use_ssl) {
+        ws.beginSSL(ws_host.c_str(), ws_port, ws_path.c_str());
+    } else {
+        ws.begin(ws_host.c_str(), ws_port, ws_path.c_str());
+    }
     ws.onEvent(onWebSocketEvent);
     ws.setReconnectInterval(3000);
     ws.enableHeartbeat(15000, 3000, 2);
 
-    Serial.printf("[WS] Connecting to ws://%s:%d%s\n", WS_HOST, WS_PORT, WS_PATH);
+    Serial.printf("[WS] Connecting to %s://%s:%d%s\n",
+                  ws_use_ssl ? "wss" : "ws", ws_host.c_str(), ws_port, ws_path.c_str());
 
     FrameMsg msg;
 
@@ -329,16 +386,26 @@ static void wsTask(void* arg) {
         // ws.loop() phải gọi THƯỜNG XUYÊN — đây là trái tim của WebSocket
         ws.loop();
 
-        // Lấy frame từ queue, timeout ngắn để ws.loop() không bị bỏ đói
-        if (xQueueReceive(frame_queue, &msg, pdMS_TO_TICKS(5)) == pdTRUE) {
-            // Xả sạch queue để CHỈ gửi frame MỚI NHẤT, bỏ các frame dồn ứ -> Triệt tiêu delay
-            FrameMsg next_msg;
-            while (xQueueReceive(frame_queue, &next_msg, 0) == pdTRUE) {
-                free(msg.data);
-                msg = next_msg;
-                stat_dropped++;
+        // Handle pending driver check-in/out updates
+        if (pending_ws_login_send) {
+            pending_ws_login_send = false;
+            if (ws_connected) {
+                char ws_msg[128];
+                snprintf(ws_msg, sizeof(ws_msg), "{\"type\":\"driver_login\",\"driver_id\":\"%s\"}", active_driver_id);
+                ws.sendTXT(ws_msg);
+                Serial.printf("[WS] Sent driver_login: %s\n", active_driver_id);
             }
+        }
+        if (pending_ws_logout_send) {
+            pending_ws_logout_send = false;
+            if (ws_connected) {
+                ws.sendTXT("{\"type\":\"driver_login\",\"driver_id\":null}");
+                Serial.println("[WS] Sent driver_logout");
+            }
+        }
 
+        // Lấy frame từ queue, hàng đợi có độ sâu bằng 1 nên luôn lấy được frame mới nhất
+        if (xQueueReceive(frame_queue, &msg, pdMS_TO_TICKS(10)) == pdTRUE) {
             if (ws_connected) {
                 bool ok = ws.sendBIN(msg.data, msg.len);
                 if (ok) {
@@ -380,6 +447,9 @@ static void statsTask(void* arg) {
     }
 }
 
+// ─── Cloud Connection Settings ───────────────────────────────────────────────
+// Dynamic discovery removed - directly using cloud configuration.
+
 // ─── setup / loop ─────────────────────────────────────────────────────────────
 void setup() {
     Serial.begin(115200);
@@ -414,6 +484,16 @@ void setup() {
         }
     }
     Serial.println();
+
+    Serial.println("[Connection] Using production cloud server.");
+
+    // Khởi tạo ESP-NOW
+    if (esp_now_init() == ESP_OK) {
+        Serial.println("[ESP-NOW] Initialized successfully");
+        esp_now_register_recv_cb(onDataRecv);
+    } else {
+        Serial.println("[ESP-NOW] Error initializing");
+    }
 
     // Tạo queue
     frame_queue = xQueueCreate(QUEUE_DEPTH, sizeof(FrameMsg));

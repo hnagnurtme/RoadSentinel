@@ -144,6 +144,7 @@ class CameraManager:
     def __init__(self) -> None:
         self.ws: Optional[WebSocket] = None
         self.device_id: str = "esp32-cam"
+        self.active_driver_id: Optional[str] = None
 
     async def connect(self, ws: WebSocket) -> None:
         await ws.accept()
@@ -152,6 +153,7 @@ class CameraManager:
 
     def disconnect(self) -> None:
         self.ws = None
+        self.active_driver_id = None
         logger.info("ESP32-CAM disconnected")
 
     @property
@@ -171,19 +173,19 @@ class CameraManager:
 
 
 class FrontendManager:
-    """Holds all browser viewer WebSocket connections."""
+    """Holds all browser viewer WebSocket connections with their target driver_id."""
 
     def __init__(self) -> None:
-        self._connections: list[WebSocket] = []
+        self._connections: dict[WebSocket, Optional[str]] = {}
 
-    async def connect(self, ws: WebSocket) -> None:
+    async def connect(self, ws: WebSocket, driver_id: Optional[str] = None) -> None:
         await ws.accept()
-        self._connections.append(ws)
-        logger.info("Browser viewer connected (total=%d)", len(self._connections))
+        self._connections[ws] = driver_id
+        logger.info("Browser viewer connected for driver %s (total=%d)", driver_id, len(self._connections))
 
     def disconnect(self, ws: WebSocket) -> None:
         if ws in self._connections:
-            self._connections.remove(ws)
+            del self._connections[ws]
         logger.info("Browser viewer disconnected (total=%d)", len(self._connections))
 
     @property
@@ -196,20 +198,47 @@ class FrontendManager:
 
     async def broadcast(self, message: str) -> None:
         dead: list[WebSocket] = []
-        for ws in self._connections:
-            try:
-                await ws.send_text(message)
-            except Exception:
-                dead.append(ws)
+        for ws, req_driver_id in list(self._connections.items()):
+            is_authorized = (req_driver_id is not None) and (req_driver_id == camera_mgr.active_driver_id)
+            if is_authorized:
+                try:
+                    await ws.send_text(message)
+                except Exception:
+                    dead.append(ws)
         for ws in dead:
             self.disconnect(ws)
 
     async def send_raw_frame(self, jpeg_bytes: bytes) -> None:
-        """Send raw JPEG frame to all connected frontend viewers."""
+        """Send raw JPEG frame to matching connected frontend viewers."""
         dead: list[WebSocket] = []
-        for ws in self._connections:
+        for ws, req_driver_id in list(self._connections.items()):
+            is_authorized = (req_driver_id is not None) and (req_driver_id == camera_mgr.active_driver_id)
+            if is_authorized:
+                try:
+                    await ws.send_bytes(jpeg_bytes)
+                except Exception:
+                    dead.append(ws)
+        for ws in dead:
+            self.disconnect(ws)
+
+    async def broadcast_auth_update(self) -> None:
+        """Broadcast updated authorization status to all connected frontend clients."""
+        dead: list[WebSocket] = []
+        for ws, req_driver_id in list(self._connections.items()):
+            is_authorized = (req_driver_id is not None) and (req_driver_id == camera_mgr.active_driver_id)
             try:
-                await ws.send_bytes(jpeg_bytes)
+                await ws.send_text(
+                    json.dumps(
+                        {
+                            "type": "pong",
+                            "camera": camera_mgr.is_online and is_authorized,
+                            "clients": self.client_count,
+                            "device": camera_mgr.device_id,
+                            "authorized": is_authorized,
+                            "active_driver_id": camera_mgr.active_driver_id,
+                        }
+                    )
+                )
             except Exception:
                 dead.append(ws)
         for ws in dead:
@@ -335,6 +364,125 @@ async def camera_websocket(websocket: WebSocket) -> None:
     t_last_log: float = time.time()
     last_alert_sent_at: dict[str, float] = {}
 
+    # Hàng đợi chứa các frame để xử lý AI bất đồng bộ nhằm không chặn luồng nhận ảnh
+    queue: asyncio.Queue[Optional[tuple[bytes, int, float]]] = asyncio.Queue(maxsize=3)
+    loop = asyncio.get_running_loop()
+
+    # Worker xử lý AI chạy nền chạy tuần tự các frame lấy từ hàng đợi
+    async def ai_worker() -> None:
+        nonlocal t_last_log
+        while True:
+            try:
+                item = await queue.get()
+                if item is None:
+                    break  # Nhận tín hiệu dừng khi đóng kết nối
+
+                jb, f_idx, frame_time = item
+
+                # Đưa hàm xử lý AI CPU-bound vào thread pool để tránh chặn Event Loop chính
+                result = await loop.run_in_executor(
+                    None, processor.process_frame, jb, f_idx, frame_time
+                )
+
+                if result.detections or result.event:
+                    display_event = result.event
+                    if result.all_events and len(result.all_events) > 1:
+                        display_event = " + ".join(result.all_events)
+
+                    event_timing = None
+                    if (
+                        display_event
+                        and display_event != "normal"
+                        and display_event != "unknown"
+                    ):
+                        current_event = result.event
+                        if current_event is not None:
+                            duration_sec = processor.event_logic.get_event_duration(
+                                current_event, frame_time
+                            )
+                            event_timing = {
+                                "active": True,
+                                "event": display_event,
+                                "started_at": None,
+                                "duration_ms": int(duration_sec * 1000),
+                                "confidence": result.confidence,
+                            }
+
+                    frame_message = {
+                        "type": "frame",
+                        "frame_idx": f_idx,
+                        "jpeg": None,
+                        "detections": result.detections,
+                        "event": display_event,
+                        "confidence": result.confidence,
+                        "event_timing": event_timing,
+                        "timestamp": frame_time,
+                    }
+                    await frontend_mgr.broadcast(json.dumps(frame_message))
+
+                if result.should_save_evidence and result.event:
+                    pipeline = processor.pipelines.get(result.event)
+                    if pipeline:
+                        logger.info(
+                            "[AI Async] Triggering async persistence for %s", result.event
+                        )
+                        asyncio.create_task(
+                            _persist_and_broadcast(pipeline, result.confidence)
+                        )
+
+                # Gửi thông tin phục hồi qua MQTT
+                if result.mqtt_event == "normal":
+                    mqtt_client.publish(
+                        result.mqtt_event,
+                        result.mqtt_payload
+                    )
+
+                if result.should_broadcast and result.event:
+                    last_sent = last_alert_sent_at.get(result.event, 0.0)
+                    if frame_time - last_sent >= settings.DRIVER_EVENT_ALERT_COOLDOWN_SECONDS:
+                        display_event = result.event
+                        if result.all_events and len(result.all_events) > 1:
+                            display_event = " + ".join(result.all_events)
+
+                        await frontend_mgr.broadcast(
+                            json.dumps(
+                                {
+                                    "type": "driver_event",
+                                    "event": display_event,
+                                    "confidence": result.confidence,
+                                    "drowsy_duration": processor.event_logic.get_drowsy_duration(
+                                        frame_time
+                                    ),
+                                    "escalated": result.escalated,
+                                }
+                            )
+                        )
+                        last_alert_sent_at[result.event] = frame_time
+
+                # Gửi thông tin cảnh báo vi phạm qua MQTT đồng bộ với việc lưu evidence
+                if result.should_save_evidence and result.mqtt_event and result.mqtt_event != "normal":
+                    mqtt_client.publish(
+                        result.mqtt_event,
+                        result.mqtt_payload
+                    )
+
+                if frame_time - t_last_log >= 10.0:
+                    logger.info(
+                        "[AI Async] frame=%d event=%s conf=%.2f dets=%d",
+                        f_idx,
+                        result.event or "none",
+                        result.confidence,
+                        len(result.detections),
+                    )
+                    t_last_log = frame_time
+
+                queue.task_done()
+            except Exception as e:
+                logger.error(f"Error in background AI worker: {e}")
+
+    # Chạy worker task trong background
+    worker_task = asyncio.create_task(ai_worker())
+
     try:
         while True:
             data = await websocket.receive()
@@ -350,8 +498,13 @@ async def camera_websocket(websocket: WebSocket) -> None:
                         await frontend_mgr.broadcast(
                             json.dumps({"type": "esp32_stats", **msg})
                         )
-                except Exception:
-                    pass
+                    elif msg.get("type") == "driver_login":
+                        processor.active_driver_id = msg.get("driver_id")
+                        camera_mgr.active_driver_id = msg.get("driver_id")
+                        logger.info(f"[Camera WS] Active driver updated dynamically to: {processor.active_driver_id}")
+                        await frontend_mgr.broadcast_auth_update()
+                except Exception as e:
+                    logger.error(f"Error parsing camera text message: {e}")
                 continue
 
             jpeg_bytes: Optional[bytes] = data.get("bytes")
@@ -361,116 +514,47 @@ async def camera_websocket(websocket: WebSocket) -> None:
             frame_idx += 1
             now = time.monotonic()
 
-            result = processor.process_frame(jpeg_bytes, frame_idx, now)
-
+            # 1. Phát trực tiếp ảnh thô tới frontend ngay lập tức (độ trễ bằng 0)
             await frontend_mgr.send_raw_frame(jpeg_bytes)
 
-            if result.detections or result.event:
-                display_event = result.event
-                if result.all_events and len(result.all_events) > 1:
-                    display_event = " + ".join(result.all_events)
+            # 2. Đưa ảnh vào hàng đợi để xử lý AI.
+            # Nếu hàng đợi bị đầy (AI chạy chậm hơn camera), bỏ bớt ảnh cũ để luôn xử lý ảnh mới nhất
+            if queue.full():
+                try:
+                    queue.get_nowait()
+                    queue.task_done()
+                except asyncio.QueueEmpty:
+                    pass
 
-                event_timing = None
-                if (
-                    display_event
-                    and display_event != "normal"
-                    and display_event != "unknown"
-                ):
-                    current_event = result.event
-                    if current_event is None:
-                        continue
-                    duration_sec = processor.event_logic.get_event_duration(
-                        current_event, now
-                    )
-                    event_timing = {
-                        "active": True,
-                        "event": display_event,
-                        "started_at": None,
-                        "duration_ms": int(duration_sec * 1000),
-                        "confidence": result.confidence,
-                    }
-
-                frame_message = {
-                    "type": "frame",
-                    "frame_idx": frame_idx,
-                    "jpeg": None,  # Binary frame already sent separately
-                    "detections": result.detections,
-                    "event": display_event,
-                    "confidence": result.confidence,
-                    "event_timing": event_timing,
-                    "timestamp": now,
-                }
-                await frontend_mgr.broadcast(json.dumps(frame_message))
-
-            if result.should_save_evidence and result.event:
-                pipeline = processor.pipelines.get(result.event)
-                if pipeline:
-                    logger.info(
-                        "[AI] Triggering async persistence for %s", result.event
-                    )
-                    asyncio.create_task(
-                        _persist_and_broadcast(pipeline, result.confidence)
-                    )
-
-            # MQTT Publishing (Delayed and with 'normal' state)
-            if result.mqtt_event:
-                mqtt_client.publish(
-                    result.mqtt_event,
-                    result.mqtt_payload
-                )
-
-            if result.should_broadcast and result.event:
-                last_sent = last_alert_sent_at.get(result.event, 0.0)
-                if now - last_sent >= settings.DRIVER_EVENT_ALERT_COOLDOWN_SECONDS:
-                    display_event = result.event
-                    if result.all_events and len(result.all_events) > 1:
-                        display_event = " + ".join(result.all_events)
-
-                    await frontend_mgr.broadcast(
-                        json.dumps(
-                            {
-                                "type": "driver_event",
-                                "event": display_event,
-                                "confidence": result.confidence,
-                                "drowsy_duration": processor.event_logic.get_drowsy_duration(
-                                    now
-                                ),
-                                "escalated": result.escalated,
-                            }
-                        )
-                    )
-                    
-                    last_alert_sent_at[result.event] = now
-
-            if now - t_last_log >= 10.0:
-                logger.info(
-                    "[AI] frame=%d event=%s conf=%.2f dets=%d",
-                    frame_idx,
-                    result.event or "none",
-                    result.confidence,
-                    len(result.detections),
-                )
-                t_last_log = now
+            await queue.put((jpeg_bytes, frame_idx, now))
 
     except WebSocketDisconnect:
         pass
     finally:
+        # Dừng worker và thu hồi tài nguyên khi ngắt kết nối
+        await queue.put(None)
+        await worker_task
         processor.reset()
         camera_mgr.disconnect()
+        await frontend_mgr.broadcast_auth_update()
 
 
 @router.websocket("/frontend")
 async def frontend_websocket(websocket: WebSocket) -> None:
-    await frontend_mgr.connect(websocket)
+    driver_id = websocket.query_params.get("driver_id")
+    await frontend_mgr.connect(websocket, driver_id)
 
     try:
+        is_authorized = (driver_id is not None) and (driver_id == camera_mgr.active_driver_id)
         await websocket.send_text(
             json.dumps(
                 {
                     "type": "pong",
-                    "camera": camera_mgr.is_online,
+                    "camera": camera_mgr.is_online and is_authorized,
                     "clients": frontend_mgr.client_count,
                     "device": camera_mgr.device_id,
+                    "authorized": is_authorized,
+                    "active_driver_id": camera_mgr.active_driver_id,
                 }
             )
         )
@@ -485,13 +569,16 @@ async def frontend_websocket(websocket: WebSocket) -> None:
             cmd_type = cmd.get("type")
 
             if cmd_type == "ping":
+                is_authorized = (driver_id is not None) and (driver_id == camera_mgr.active_driver_id)
                 await websocket.send_text(
                     json.dumps(
                         {
                             "type": "pong",
-                            "camera": camera_mgr.is_online,
+                            "camera": camera_mgr.is_online and is_authorized,
                             "clients": frontend_mgr.client_count,
                             "device": camera_mgr.device_id,
+                            "authorized": is_authorized,
+                            "active_driver_id": camera_mgr.active_driver_id,
                         }
                     )
                 )
@@ -503,10 +590,16 @@ async def frontend_websocket(websocket: WebSocket) -> None:
                 "set_hmirror",
                 "set_camera",
             }:
-                ok = await camera_mgr.send_command(cmd)
-                await websocket.send_text(
-                    json.dumps({"type": "ack", "cmd": cmd_type, "success": ok})
-                )
+                is_authorized = (driver_id is not None) and (driver_id == camera_mgr.active_driver_id)
+                if is_authorized:
+                    ok = await camera_mgr.send_command(cmd)
+                    await websocket.send_text(
+                        json.dumps({"type": "ack", "cmd": cmd_type, "success": ok})
+                    )
+                else:
+                    await websocket.send_text(
+                        json.dumps({"type": "ack", "cmd": cmd_type, "success": False, "error": "unauthorized"})
+                    )
 
     except WebSocketDisconnect:
         pass

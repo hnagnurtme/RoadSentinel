@@ -153,6 +153,9 @@ class Settings(BaseSettings):
     DRIVER_EVENT_DISTRACTED_HOLD_FRAMES: int = 4
     DRIVER_EVENT_DROWSY_HOLD_FRAMES: int = 3
 
+    # Seconds to hold an event active when evidence is lost to prevent noise.
+    DRIVER_EVENT_EXIT_HOLD_SECONDS: float = 2.0
+
     DRIVER_EVENT_MIN_SLEEP_CONFIDENCE: float = 0.5
     DRIVER_EVENT_MIN_PHONE_CONFIDENCE: float = 0.6
     DRIVER_EVENT_MIN_DISTRACTED_CONFIDENCE: float = 0.6
@@ -314,6 +317,7 @@ class Settings(BaseSettings):
         "DRIVER_EVENT_DROWSY_MIN_ALERT_SECONDS",
         "DRIVER_EVENT_DROWSY_ESCALATION_SECONDS",
         "MQTT_RECOVERY_STABLE_SECONDS",
+        "DRIVER_EVENT_EXIT_HOLD_SECONDS",
     )
     @classmethod
     def _validate_non_negative_seconds(cls, value: float) -> float:
