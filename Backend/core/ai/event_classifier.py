@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
+import time
 from typing import Final
 
 from shared.config import settings
@@ -109,6 +110,9 @@ class DriverEventClassifier:
         self._event_active_since: dict[str, float | None] = dict.fromkeys(
             self._LABEL_SETS, None
         )
+        self._last_confirmed_time: dict[str, float | None] = dict.fromkeys(
+            self._LABEL_SETS, None
+        )
         self._drowsy_active_since: float | None = None
 
     # ------------------------------------------------------------------
@@ -185,15 +189,18 @@ class DriverEventClassifier:
         )
         return min(1.0, max(0.0, combined))
 
-    def _advance_event_state(self, event: str, evidence_conf: float) -> float:
+    def _advance_event_state(
+        self, event: str, evidence_conf: float, now: float | None = None
+    ) -> float:
         """Advance one event through idle/candidate/confirmed/held/releasing."""
         self._event_histories[event].append(max(0.0, evidence_conf))
         score = self._composite_score(event)
 
         activate = self._activate_thresholds[event]
         deactivate = self._deactivate_thresholds[event]
-        hold_frames = self._hold_frames[event]
         state = self._event_state[event]
+
+        now_val = now if now is not None else time.monotonic()
 
         if score >= activate:
             self._candidate_streaks[event] += 1
@@ -220,17 +227,20 @@ class DriverEventClassifier:
                 state = "idle"
         elif state in {"confirmed", "held"}:
             if score <= deactivate:
-                state = (
-                    "held"
-                    if self._release_streaks[event] < hold_frames
-                    else "releasing"
+                last_confirmed = self._last_confirmed_time[event]
+                is_within_grace = (
+                    last_confirmed is not None
+                    and (now_val - last_confirmed) <= settings.DRIVER_EVENT_EXIT_HOLD_SECONDS
                 )
+                state = "held" if is_within_grace else "releasing"
             else:
                 state = "confirmed"
 
         self._event_state[event] = state
         self._event_active[event] = state in {"confirmed", "held"}
         self._event_scores[event] = score
+        if state == "confirmed":
+            self._last_confirmed_time[event] = now_val
         return score
 
     # ------------------------------------------------------------------
@@ -252,6 +262,7 @@ class DriverEventClassifier:
             ``"sleeping"``, ``"using_phone"``, ``"distracted"``,
             ``"drowsy"``, ``"normal"``, ``"unknown"``.
         """
+        now_val = now if now is not None else time.monotonic()
         label_conf = self._max_conf_by_label(detections)
 
         has_presence = bool(label_conf)
@@ -265,7 +276,7 @@ class DriverEventClassifier:
                 default=0.0,
             )
             raw_event_confidence[event] = evidence_conf
-            event_confidence[event] = self._advance_event_state(event, evidence_conf)
+            event_confidence[event] = self._advance_event_state(event, evidence_conf, now_val)
 
         explicit_sleeping_conf = label_conf.get("eyes closed", 0.0)
         if explicit_sleeping_conf >= self._confidence_thresholds["sleeping"]:
@@ -274,12 +285,13 @@ class DriverEventClassifier:
             self._event_miss_streaks["sleeping"] = 0
             self._event_active["sleeping"] = True
             self._event_state["sleeping"] = "confirmed"
+            self._last_confirmed_time["sleeping"] = now_val
             self._candidate_streaks["sleeping"] = self._candidate_enter_frames
             self._release_streaks["sleeping"] = 0
-            self._update_drowsy_timing(is_drowsy=False, now=now)
+            self._update_drowsy_timing(is_drowsy=False, now=now_val)
             all_active = ["sleeping"]
-            if self._event_active_since["sleeping"] is None and now is not None:
-                self._event_active_since["sleeping"] = now
+            if self._event_active_since["sleeping"] is None:
+                self._event_active_since["sleeping"] = now_val
             return "sleeping", explicit_sleeping_conf, all_active
 
         for event in ("using_phone", "distracted", "drowsy"):
@@ -290,6 +302,7 @@ class DriverEventClassifier:
                 self._event_miss_streaks[event] = 0
                 self._event_active[event] = True
                 self._event_state[event] = "confirmed"
+                self._last_confirmed_time[event] = now_val
                 self._candidate_streaks[event] = self._candidate_enter_frames
                 self._release_streaks[event] = 0
 
@@ -311,8 +324,8 @@ class DriverEventClassifier:
         for event in self._LABEL_SETS:
             if self._event_active.get(event, False):
                 all_active.append(event)
-                if self._event_active_since[event] is None and now is not None:
-                    self._event_active_since[event] = now
+                if self._event_active_since[event] is None:
+                    self._event_active_since[event] = now_val
             else:
                 self._event_active_since[event] = None
 
@@ -327,7 +340,7 @@ class DriverEventClassifier:
         if resolved_event:
             return resolved_event, resolved_conf, all_active
 
-        self._update_drowsy_timing(is_drowsy=False, now=now)
+        self._update_drowsy_timing(is_drowsy=False, now=now_val)
 
         if self._no_presence_counter >= self._unknown_enter_frames:
             return "unknown", 0.0, []
@@ -372,6 +385,7 @@ class DriverEventClassifier:
             self._release_streaks[event] = 0
             self._event_histories[event].clear()
             self._event_active_since[event] = None
+            self._last_confirmed_time[event] = None
 
     # ------------------------------------------------------------------
     # Private: drowsy timing

@@ -196,6 +196,7 @@ async def process_fingerprint(
                 "session_id": str(active_session._id),
                 "driver_name": user.name or user.email,
                 "status": "COMPLETED",
+                "driver_id": str(user._id),
             }
         )
     else:
@@ -232,6 +233,7 @@ async def process_fingerprint(
                 "session_id": str(new_session._id),
                 "driver_name": user.name or user.email,
                 "status": "ACTIVE",
+                "driver_id": str(user._id),
             }
         )
 
@@ -274,6 +276,13 @@ async def update_fingerprint(
     user = db.query(User).filter(User._id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    # Unbind this fingerprint_id from any other user to maintain uniqueness
+    db.query(User).filter(
+        User.fingerprint_id == payload.fingerprint_id,
+        User._id != user_id
+    ).update({User.fingerprint_id: None}, synchronize_session=False)
+
     user.fingerprint_id = payload.fingerprint_id
     db.commit()
     db.refresh(user)

@@ -78,6 +78,7 @@ class CameraFrameProcessor:
         self.mqtt_active_event: str | None = None
         self.mqtt_alert_sent_for: str | None = None
         self.normal_start_time: float | None = None
+        self.active_driver_id: str | None = None
 
     def _setup_evidence_pipelines(self) -> None:
         from interfaces.api.v1.websocket import create_save_alert_function
@@ -154,9 +155,8 @@ class CameraFrameProcessor:
 
         violation_events = {"sleeping", "using_phone", "distracted", "drowsy"}
         if event in violation_events:
-            duration = self.event_logic.get_event_duration(event, now)
-            threshold = settings.DRIVER_EVENT_EVIDENCE_SECONDS * 0.66
-            if duration >= threshold and self.mqtt_active_event is None:
+            if should_save_evidence:
+                duration = self.event_logic.get_event_duration(event, now)
                 mqtt_event = event
                 mqtt_payload = {
                     "event": event,
@@ -165,7 +165,7 @@ class CameraFrameProcessor:
                     "duration_ms": int(duration * 1000),
                     "timestamp": now,
                     "device_id": str(settings.DRIVER_EVENT_FALLBACK_DEVICE_ID),
-                    "driver_id": str(settings.DRIVER_EVENT_FALLBACK_DRIVER_ID),
+                    "driver_id": self.active_driver_id or str(settings.DRIVER_EVENT_FALLBACK_DRIVER_ID),
                     "vehicle_id": str(settings.DRIVER_EVENT_FALLBACK_VEHICLE_ID),
                 }
                 self.mqtt_alert_sent_for = event
@@ -182,7 +182,7 @@ class CameraFrameProcessor:
                     "previous_event": self.mqtt_active_event,
                     "timestamp": now,
                     "device_id": str(settings.DRIVER_EVENT_FALLBACK_DEVICE_ID),
-                    "driver_id": str(settings.DRIVER_EVENT_FALLBACK_DRIVER_ID),
+                    "driver_id": self.active_driver_id or str(settings.DRIVER_EVENT_FALLBACK_DRIVER_ID),
                     "vehicle_id": str(settings.DRIVER_EVENT_FALLBACK_VEHICLE_ID),
                     "stable_duration_ms": int(normal_duration * 1000),
                 }
@@ -334,4 +334,5 @@ class CameraFrameProcessor:
         self.distracted_grace = _GraceTracker(expires_at=0.0)
         self.mqtt_active_event = None
         self.mqtt_alert_sent_for = None
-        self.normal_start_time: float | None = None
+        self.normal_start_time = None
+        self.active_driver_id = None
