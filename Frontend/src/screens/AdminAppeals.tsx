@@ -6,7 +6,7 @@ import { ApiError } from "@/api/http";
 import { env } from "@/config/env";
 import type { Appeal, AppealApiDto } from "@/types/appeal";
 import type { Alert } from "@/types/alert";
-import { Check, X, Paperclip, MessageSquareWarning, ExternalLink, Search } from "lucide-react";
+import { Check, X, Paperclip, MessageSquareWarning, ExternalLink, Search, FileVideo } from "lucide-react";
 import { formatAlertTypeLabel } from "@/types/alert";
 import { useLanguage } from "@/i18n/LanguageContext";
 import { calculateSafetyScore, getSafetyScoreLabel } from "@/utils/safetyScore";
@@ -17,10 +17,27 @@ function formatTs(value: string | null): string {
   return new Date(value).toLocaleString();
 }
 
+function isVideoEvidence(url: string | null): boolean {
+  if (!url) return false;
+  const normalized = url.toLowerCase();
+  return normalized.endsWith(".mp4") || normalized.includes("/video/");
+}
+
 function appealStatusClass(status: string): string {
   if (status === "APPROVED") return "bg-emerald-500/10 text-emerald-600";
   if (status === "REJECTED") return "bg-error/10 text-error";
   return "bg-amber-500/10 text-amber-600";
+}
+
+function resolveExternalUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (/^(https?:|blob:|data:)/i.test(trimmed)) return trimmed;
+
+  const apiOrigin = env.apiBaseUrl.replace(/\/api\/v\d+\/?$/i, "");
+  if (trimmed.startsWith("/")) return `${apiOrigin}${trimmed}`;
+  return `${apiOrigin}/${trimmed}`;
 }
 
 export function AdminAppeals() {
@@ -34,6 +51,7 @@ export function AdminAppeals() {
   const [submittingId, setSubmittingId] = useState<string | null>(null);
   
   const [selectedAppeal, setSelectedAppeal] = useState<Appeal | null>(null);
+  const [previewEvidenceUrl, setPreviewEvidenceUrl] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "PENDING" | "APPROVED" | "REJECTED">("ALL");
   const [sortBy, setSortBy] = useState<"DEFAULT" | "NEWEST" | "OLDEST">("DEFAULT");
@@ -239,6 +257,11 @@ export function AdminAppeals() {
 
     return result;
   }, [appeals, drivers, alerts, searchTerm, statusFilter, sortBy]);
+
+  const selectedAlert = selectedAppeal ? alerts[selectedAppeal.alertId] ?? null : null;
+  const selectedEvidenceUrl = resolveExternalUrl(selectedAlert?.evidenceUrl);
+  const selectedAttachmentUrl = resolveExternalUrl(selectedAppeal?.attachmentUrl);
+  const hasReviewAssets = selectedAttachmentUrl || selectedEvidenceUrl;
 
   return (
     <div className="flex flex-col h-full bg-surface-container-lowest relative">
@@ -467,19 +490,34 @@ export function AdminAppeals() {
                       </p>
                     </div>
 
-                    {selectedAppeal.attachmentUrl && (
+                    {hasReviewAssets && (
                       <div className="flex flex-col gap-2 border-t border-surface-container-high pt-3">
-                        <span className="text-[10px] font-bold text-secondary">{t("appeals.attachment")}</span>
-                        <a 
-                          href={selectedAppeal.attachmentUrl} 
-                          target="_blank" 
-                          rel="noreferrer" 
-                          className="inline-flex items-center gap-1.5 self-start px-3 py-2 rounded-lg bg-surface-container-high hover:bg-surface-container-highest transition-colors border border-outline-variant/30 text-[10px] font-bold uppercase text-primary cursor-pointer shadow-sm text-center"
-                        >
-                          <Paperclip className="w-3.5 h-3.5" />
-                          {t("appeals.viewAttachment")}
-                          <ExternalLink className="w-3 h-3 ml-0.5 opacity-55" />
-                        </a>
+                        <span className="text-[10px] font-bold text-secondary">{t("appeals.reviewFiles")}</span>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedAttachmentUrl && (
+                            <a
+                              href={selectedAttachmentUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-surface-container-high hover:bg-surface-container-highest transition-colors border border-outline-variant/30 text-[10px] font-bold uppercase text-primary cursor-pointer shadow-sm text-center"
+                            >
+                              <Paperclip className="w-3.5 h-3.5 shrink-0" />
+                              {t("appeals.viewAttachment")}
+                              <ExternalLink className="w-3 h-3 ml-0.5 opacity-55 shrink-0" />
+                            </a>
+                          )}
+
+                          {selectedEvidenceUrl && (
+                            <button
+                              type="button"
+                              onClick={() => setPreviewEvidenceUrl(selectedEvidenceUrl)}
+                              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-on-primary hover:opacity-90 transition-opacity border border-primary/30 text-[10px] font-bold uppercase cursor-pointer shadow-sm text-center"
+                            >
+                              <FileVideo className="w-3.5 h-3.5 shrink-0" />
+                              {t("appeals.viewEvidence")}
+                            </button>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -553,6 +591,49 @@ export function AdminAppeals() {
           )}
         </div>
       </div>
+
+      {previewEvidenceUrl && (
+        <div
+          className="fixed inset-0 z-70 bg-black/70 backdrop-blur-[1px] p-4 md:p-8 flex items-center justify-center"
+          onClick={() => setPreviewEvidenceUrl(null)}
+        >
+          <div
+            className="w-full max-w-5xl bg-surface-container-lowest rounded-xl ring-1 ring-outline-variant/20 shadow-xl overflow-hidden"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="px-5 py-3 border-b border-outline-variant/20 flex items-center justify-between">
+              <h4 className="text-sm font-bold text-primary uppercase tracking-wider">
+                {language === "en" ? "Evidence Preview" : "Xem trước bằng chứng"}
+              </h4>
+              <div className="flex items-center gap-2">
+                <a
+                  href={previewEvidenceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+                >
+                  {language === "en" ? "Open Original" : "Mở bản gốc"} <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setPreviewEvidenceUrl(null)}
+                  className="p-1.5 rounded hover:bg-surface-container-low text-secondary cursor-pointer"
+                  aria-label="Close preview"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="bg-black">
+              {isVideoEvidence(previewEvidenceUrl) ? (
+                <video className="w-full max-h-[72vh]" src={previewEvidenceUrl} controls autoPlay />
+              ) : (
+                <img className="w-full max-h-[72vh] object-contain mx-auto" src={previewEvidenceUrl} alt="Evidence preview" />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="fixed right-4 top-4 z-80 space-y-2">
         {toasts.map((toast) => (
