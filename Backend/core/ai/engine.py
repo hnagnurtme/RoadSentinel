@@ -26,6 +26,7 @@ RELEVANT_CLASSES: Final[frozenset[str]] = frozenset(
         "looking away",
         "mobile",
         "reaching behind",
+        "distracted",
         "seat belt",
         "yawning",
     }

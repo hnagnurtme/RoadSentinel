@@ -21,7 +21,7 @@ class DriverEventClassifier:
         "drowsy": frozenset({"yawning"}),
         "using_phone": frozenset({"mobile"}),
         "distracted": frozenset(
-            {"looking away", "reaching behind", "drinking", "seat belt"}
+            {"looking away", "reaching behind", "distracted", "drinking", "seat belt"}
         ),
     }
 

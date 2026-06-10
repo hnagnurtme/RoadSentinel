@@ -21,6 +21,8 @@ struct DriverInfoMsg {
 // ==========================================================
 // CẤU HÌNH WIFI VÀ THỜI GIAN
 // ==========================================================
+// #define WIFI_SSID "test123"
+// #define WIFI_PASSWORD "12345678"
 #define WIFI_SSID "37 Ngo Van So"
 #define WIFI_PASSWORD "987654321"
 #define NTP_SERVER "pool.ntp.org"

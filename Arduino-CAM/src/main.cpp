@@ -63,10 +63,12 @@ static void onDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len
     }
 }
 
+// // ─── Wi-Fi credentials ────────────────────────────────────────────────────────
+// static const char* WIFI_SSID = "test123";
+// static const char* WIFI_PASS = "12345678";
 // ─── Wi-Fi credentials ────────────────────────────────────────────────────────
 static const char* WIFI_SSID = "37 Ngo Van So";
 static const char* WIFI_PASS = "987654321";
-
 // ─── Server ───────────────────────────────────────────────────────────────────
 static String         ws_host = "road-sentinel.trunganh.tech";
 static uint16_t       ws_port = 443;

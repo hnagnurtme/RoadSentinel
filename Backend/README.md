@@ -247,7 +247,7 @@ Backend/
 |-------|---------|
 | `SLEEPING` | Eyes closed detected OR drowsy escalated |
 | `USING_PHONE` | Mobile phone in hand |
-| `DISTRACTED` | Looking away, reaching behind, drinking, seat belt |
+| `DISTRACTED` | Looking away, reaching behind / distracted, drinking, seat belt |
 
 ---
 
@@ -523,6 +523,7 @@ The model outputs 7 relevant classes:
 | `mobile` | `using_phone` |
 | `looking away` | `distracted` |
 | `reaching behind` | `distracted` |
+| `distracted` | `distracted` |
 | `drinking` | `distracted` |
 | `seat belt` | `distracted` |
 
