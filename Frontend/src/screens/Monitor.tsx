@@ -186,7 +186,7 @@ function useCameraStream(deviceId: string, driverId?: string) {
           frameIdx: frame.frame_idx,
           jpeg: frame.jpeg || latestFrameRef.current?.jpeg || "",
           detections: frame.detections ?? latestFrameRef.current?.detections ?? [],
-          eventTiming: frame.event_timing ?? latestFrameRef.current?.eventTiming ?? null,
+          eventTiming: frame.event_timing !== undefined ? frame.event_timing : (latestFrameRef.current?.eventTiming ?? null),
         };
         totalFramesRef.current += 1;
 
