@@ -87,7 +87,7 @@ export function DriverPortal() {
 
   const safetyScore = useMemo(() => {
     if (!profile) return 100;
-    return calculateSafetyScore(profile.id, alerts, appeals);
+    return calculateSafetyScore(profile.id, alerts, appeals, true);
   }, [profile, alerts, appeals]);
 
   const scoreLabel = useMemo(() => {

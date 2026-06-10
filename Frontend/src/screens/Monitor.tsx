@@ -46,6 +46,7 @@ interface FrameMessage {
     started_at: number | null;
     duration_ms: number;
     confidence: number;
+    level?: string;
   };
   device: string;
 }
@@ -80,6 +81,7 @@ interface LiveViolationAlert {
   frameIdx: number;
   message: string;
   evidenceUrl: string | null;
+  isDangerous?: boolean;
 }
 
 type WsMessage = FrameMessage | PongMessage | AlertCreatedMessage | { type: string; [k: string]: unknown };
@@ -186,7 +188,7 @@ function useCameraStream(deviceId: string, driverId?: string) {
           frameIdx: frame.frame_idx,
           jpeg: frame.jpeg || latestFrameRef.current?.jpeg || "",
           detections: frame.detections ?? latestFrameRef.current?.detections ?? [],
-          eventTiming: frame.event_timing ?? latestFrameRef.current?.eventTiming ?? null,
+          eventTiming: frame.event_timing !== undefined ? frame.event_timing : (latestFrameRef.current?.eventTiming ?? null),
         };
         totalFramesRef.current += 1;
 
@@ -264,6 +266,20 @@ function useCameraStream(deviceId: string, driverId?: string) {
         } else {
           processAlert(); // Process immediately for spaced alerts
         }
+      } else if (data.type === "alert_escalated") {
+        const incoming = data as { type: "alert_escalated"; data: any };
+        setLiveAlerts((prev: LiveViolationAlert[]) => {
+          return prev.map((alert) => {
+            if (alert.alertId === incoming.data._id) {
+              return {
+                ...alert,
+                message: incoming.data.message,
+                isDangerous: true,
+              };
+            }
+            return alert;
+          });
+        });
       } else if (data.type === "camera_offline") {
         setCameraOnline(false);
         setEventTiming(null);
@@ -600,12 +616,23 @@ function EventTimingPanel({ eventTiming }: EventTimingPanelProps) {
   const mm = String(Math.floor(seconds / 60)).padStart(2, "0");
   const ss = String(seconds % 60).padStart(2, "0");
   const eventName = eventTiming.event.replaceAll("_", " ");
+  const isDangerous = eventTiming.level === "DANGEROUS" || seconds >= 10;
+
+  if (isDangerous) {
+    return (
+      <div className="rounded-lg bg-red-600 border border-red-700 px-3 py-1.5 flex items-center gap-2 animate-pulse shadow-md shadow-red-500/20">
+        <span className="text-[10px] font-black uppercase tracking-wider text-white">DANGEROUS</span>
+        <span className="text-xs font-bold text-white uppercase">{eventName}</span>
+        <span className="text-xs font-black tabular-nums text-white">{mm}:{ss}</span>
+      </div>
+    );
+  }
 
   return (
-    <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-1.5 flex items-center gap-2">
-      <span className="text-[10px] font-bold uppercase tracking-wider text-red-700">Event Timer</span>
-      <span className="text-xs font-semibold text-red-900">{eventName}</span>
-      <span className="text-xs font-black tabular-nums text-red-700">{mm}:{ss}</span>
+    <div className="rounded-lg bg-yellow-50 border border-yellow-200 px-3 py-1.5 flex items-center gap-2">
+      <span className="text-[10px] font-bold uppercase tracking-wider text-yellow-700">WARNING</span>
+      <span className="text-xs font-semibold text-yellow-900">{eventName}</span>
+      <span className="text-xs font-black tabular-nums text-yellow-700">{mm}:{ss}</span>
     </div>
   );
 }
@@ -682,19 +709,35 @@ function LiveMonitorView({ deviceId, selectedDriver, onBack }: LiveMonitorViewPr
       {/* Floating Alerts Container */}
       <div className="fixed right-6 top-24 z-40 w-[320px] pointer-events-none space-y-2">
         {liveAlerts.map((alert) => (
-          <div key={alert.id} className="pointer-events-auto rounded-xl border border-red-500/25 bg-red-50/95 shadow-xl backdrop-blur px-3 py-2.5 animate-in slide-in-from-right-8 fade-in duration-300">
+          <div key={alert.id} className={cn(
+            "pointer-events-auto rounded-xl border shadow-xl backdrop-blur px-3 py-2.5 animate-in slide-in-from-right-8 fade-in duration-300",
+            alert.isDangerous 
+              ? "border-red-600 bg-red-600 text-white shadow-red-500/20" 
+              : "border-red-500/25 bg-red-50/95"
+          )}>
             <div className="flex items-start gap-2.5">
-              <div className="mt-0.5 rounded-lg bg-red-100 p-1.5">
-                <AlertTriangle className="w-4 h-4 text-red-700" />
+              <div className={cn("mt-0.5 rounded-lg p-1.5", alert.isDangerous ? "bg-red-800 text-white animate-pulse" : "bg-red-100 text-red-700")}>
+                <AlertTriangle className="w-4 h-4" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-black uppercase tracking-wider text-red-700">New Violation</p>
-                <p className="text-sm font-bold text-red-900 truncate">{formatEvent(alert.event)}</p>
-                <p className="text-[11px] text-red-800/80 mt-0.5 truncate">{alert.message}</p>
+                <p className={cn("text-[11px] font-black uppercase tracking-wider", alert.isDangerous ? "text-red-200" : "text-red-700")}>
+                  {alert.isDangerous ? "🚨 Dangerous Violation" : "New Violation"}
+                </p>
+                <p className={cn("text-sm font-bold truncate", alert.isDangerous ? "text-white" : "text-red-900")}>
+                  {formatEvent(alert.event)}
+                </p>
+                <p className={cn("text-[11px] mt-0.5 truncate", alert.isDangerous ? "text-red-100" : "text-red-800/80")}>
+                  {alert.message}
+                </p>
                 <div className="mt-2 flex justify-end">
                   <button
                     onClick={() => alert.alertId && window.open(`${window.location.origin}/alerts/${alert.alertId}`, "_blank")}
-                    className="text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded bg-red-700 text-white hover:bg-red-800 transition-colors"
+                    className={cn(
+                      "text-[10px] font-bold uppercase tracking-wide px-2.5 py-1 rounded transition-colors",
+                      alert.isDangerous 
+                        ? "bg-white text-red-700 hover:bg-red-50" 
+                        : "bg-red-700 text-white hover:bg-red-800"
+                    )}
                   >
                     View
                   </button>

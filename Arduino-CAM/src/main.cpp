@@ -14,6 +14,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_now.h>
+#include <esp_wifi.h>
 #include <esp_camera.h>
 #include <WebSocketsClient.h>   // arduinoWebSockets by Links2004
 #include <freertos/FreeRTOS.h>
@@ -63,10 +64,13 @@ static void onDataRecv(const uint8_t * mac, const uint8_t *incomingData, int len
     }
 }
 
+// // ─── Wi-Fi credentials ────────────────────────────────────────────────────────
+// static const char* WIFI_SSID = "test123";
+// static const char* WIFI_PASS = "12345678";
 // ─── Wi-Fi credentials ────────────────────────────────────────────────────────
 static const char* WIFI_SSID = "37 Ngo Van So";
 static const char* WIFI_PASS = "987654321";
-
+#define ESP_NOW_CHANNEL 1
 // ─── Server ───────────────────────────────────────────────────────────────────
 static String         ws_host = "road-sentinel.trunganh.tech";
 static uint16_t       ws_port = 443;
@@ -319,7 +323,7 @@ static void captureTaskCorrect(void* arg) {
     while (true) {
         vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(CAPTURE_INTERVAL_MS));
 
-        if (!ws_connected) continue;
+        if (!ws_connected || !driver_active) continue;
 
         camera_fb_t* fb = esp_camera_fb_get();
         if (!fb || fb->format != PIXFORMAT_JPEG || fb->len == 0) {
@@ -406,7 +410,7 @@ static void wsTask(void* arg) {
 
         // Lấy frame từ queue, hàng đợi có độ sâu bằng 1 nên luôn lấy được frame mới nhất
         if (xQueueReceive(frame_queue, &msg, pdMS_TO_TICKS(10)) == pdTRUE) {
-            if (ws_connected) {
+            if (ws_connected && driver_active) {
                 bool ok = ws.sendBIN(msg.data, msg.len);
                 if (ok) {
                     stat_sent++;
@@ -415,10 +419,15 @@ static void wsTask(void* arg) {
                     stat_dropped++;
                 }
             } else {
-                // WS chưa kết nối, drop frame đã dequeue
+                // WS chưa kết nối hoặc tài xế đã checkout, drop frame đã dequeue
                 stat_dropped++;
             }
             free(msg.data);  // luôn giải phóng sau khi xử lý
+        }
+
+        // Nuôi watchdog khi tài xế đã checkout để tránh bị restart
+        if (!driver_active) {
+            last_sent_ms = millis();
         }
 
         // Watchdog: nếu đã kết nối nhưng không gửi được lâu → restart
@@ -471,25 +480,43 @@ void setup() {
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(false);
     WiFi.setTxPower(WIFI_POWER_17dBm);
-    WiFi.begin(WIFI_SSID, WIFI_PASS);
+    WiFi.begin(WIFI_SSID, WIFI_PASS, ESP_NOW_CHANNEL);
     Serial.print("[WiFi] Connecting");
     const uint32_t t0 = millis();
     while (!wifi_ready) {
         delay(250);
         Serial.print('.');
-        if (millis() - t0 > 20000) {
-            Serial.println("\n[FATAL] WiFi timeout — restart");
-            delay(1000);
-            ESP.restart();
+        if (millis() - t0 > 10000) {
+            Serial.println("\n[WARNING] WiFi timeout — proceeding offline");
+            break;
         }
     }
     Serial.println();
+
+    if (!wifi_ready) {
+        WiFi.disconnect(); // Stop background connecting/channel hopping
+        esp_wifi_set_promiscuous(true);
+        esp_wifi_set_channel(ESP_NOW_CHANNEL, WIFI_SECOND_CHAN_NONE);
+        esp_wifi_set_promiscuous(false);
+        Serial.printf("[WiFi] Offline mode. Fixed channel to: %d\n", ESP_NOW_CHANNEL);
+    } else {
+        // Chờ 1 giây để Wi-Fi driver ổn định kênh kết nối
+        delay(1000);
+    }
 
     Serial.println("[Connection] Using production cloud server.");
 
     // Khởi tạo ESP-NOW
     if (esp_now_init() == ESP_OK) {
         Serial.println("[ESP-NOW] Initialized successfully");
+        uint8_t primary_chan = 0;
+        if (wifi_ready) {
+            primary_chan = WiFi.channel();
+        } else {
+            wifi_second_chan_t second_chan = WIFI_SECOND_CHAN_NONE;
+            esp_wifi_get_channel(&primary_chan, &second_chan);
+        }
+        Serial.printf("[ESP-NOW] Operating on Wi-Fi Channel: %d\n", primary_chan);
         esp_now_register_recv_cb(onDataRecv);
     } else {
         Serial.println("[ESP-NOW] Error initializing");

@@ -199,7 +199,7 @@ class FrontendManager:
     async def broadcast(self, message: str) -> None:
         dead: list[WebSocket] = []
         for ws, req_driver_id in list(self._connections.items()):
-            is_authorized = (req_driver_id is not None) and (req_driver_id == camera_mgr.active_driver_id)
+            is_authorized = (req_driver_id is None) or (req_driver_id == camera_mgr.active_driver_id)
             if is_authorized:
                 try:
                     await ws.send_text(message)
@@ -212,7 +212,7 @@ class FrontendManager:
         """Send raw JPEG frame to matching connected frontend viewers."""
         dead: list[WebSocket] = []
         for ws, req_driver_id in list(self._connections.items()):
-            is_authorized = (req_driver_id is not None) and (req_driver_id == camera_mgr.active_driver_id)
+            is_authorized = (req_driver_id is None) or (req_driver_id == camera_mgr.active_driver_id)
             if is_authorized:
                 try:
                     await ws.send_bytes(jpeg_bytes)
@@ -225,7 +225,7 @@ class FrontendManager:
         """Broadcast updated authorization status to all connected frontend clients."""
         dead: list[WebSocket] = []
         for ws, req_driver_id in list(self._connections.items()):
-            is_authorized = (req_driver_id is not None) and (req_driver_id == camera_mgr.active_driver_id)
+            is_authorized = (req_driver_id is None) or (req_driver_id == camera_mgr.active_driver_id)
             try:
                 await ws.send_text(
                     json.dumps(
@@ -284,15 +284,76 @@ async def _broadcast_saved_alert(saved_alert: dict) -> None:
     )
 
 
+def escalate_alert_db_task(alert_id: str) -> dict | None:
+    """Escalates an alert by prefixing its message in the database with DANGEROUS:"""
+    from infrastructure.db.session import SessionLocal
+    with SessionLocal() as db:
+        from infrastructure.repositories.alert_repository_impl import AlertRepositoryImpl
+        import uuid
+        repository = AlertRepositoryImpl(db)
+        try:
+            uuid_id = uuid.UUID(alert_id)
+            from infrastructure.db.models import Alert as DbAlert
+            row = db.query(DbAlert).filter(DbAlert._id == uuid_id).first()
+            if row and not row.message.startswith("DANGEROUS:"):
+                row.message = f"DANGEROUS: {row.message}"
+                db.add(row)
+                db.commit()
+                db.refresh(row)
+                alert_entity = repository._to_entity(row)
+                return {
+                    "_id": str(alert_entity._id),
+                    "message": alert_entity.message,
+                    "alert_type": alert_entity.alert_type.value,
+                    "device_id": str(alert_entity.device_id),
+                    "driver_id": str(alert_entity.driver_id) if alert_entity.driver_id else None,
+                    "vehicle_id": str(alert_entity.vehicle_id) if alert_entity.vehicle_id else None,
+                    "evidence_url": alert_entity.evidence_url,
+                    "latitude": alert_entity.latitude,
+                    "longitude": alert_entity.longitude,
+                }
+        except Exception as e:
+            logger.error(f"Error escalating alert in DB: {e}", exc_info=True)
+        return None
+
+
 async def _persist_and_broadcast(
-    pipeline: DriverEvidencePipeline, confidence: float
+    processor: CameraFrameProcessor, event_key: str, pipeline: DriverEvidencePipeline, confidence: float
 ) -> None:
     loop = asyncio.get_running_loop()
     saved_alert = await loop.run_in_executor(
         None, pipeline.save_event_alert, confidence
     )
     if saved_alert is not None:
+        alert_id = saved_alert.get("_id")
+        if alert_id:
+            processor.active_alerts[event_key] = {
+                "alert_id": alert_id,
+                "message": saved_alert.get("message"),
+                "escalated": False,
+                "timestamp": time.time(),
+            }
         await _broadcast_saved_alert(saved_alert)
+
+
+async def _escalate_and_broadcast(
+    processor: CameraFrameProcessor, event_key: str, alert_id: str
+) -> None:
+    loop = asyncio.get_running_loop()
+    updated_alert = await loop.run_in_executor(
+        None, escalate_alert_db_task, alert_id
+    )
+    if updated_alert:
+        if event_key in processor.active_alerts:
+            processor.active_alerts[event_key]["message"] = updated_alert["message"]
+        
+        await alerts_ws_manager.broadcast({
+            "event": "alert.escalated",
+            "data": updated_alert
+        })
+        await frontend_mgr.broadcast(
+            json.dumps({"type": "alert_escalated", "data": updated_alert})
+        )
 
 
 def _apply_grace_periods(
@@ -403,6 +464,11 @@ async def camera_websocket(websocket: WebSocket) -> None:
                     None, processor.process_frame, jb, f_idx, frame_time
                 )
 
+                # Clear active alerts that are no longer active in event_logic
+                for ek in list(processor.active_alerts.keys()):
+                    if not processor.event_logic._event_active.get(ek, False):
+                        processor.active_alerts.pop(ek, None)
+
                 if result.detections or result.event:
                     display_event = result.event
                     if result.all_events and len(result.all_events) > 1:
@@ -419,12 +485,24 @@ async def camera_websocket(websocket: WebSocket) -> None:
                             duration_sec = processor.event_logic.get_event_duration(
                                 current_event, frame_time
                             )
+                            is_dangerous = duration_sec >= 10.0
+                            level = "DANGEROUS" if is_dangerous else "WARNING"
+                            
+                            # Handle database/websocket escalation
+                            alert_info = processor.active_alerts.get(current_event)
+                            if alert_info and not alert_info.get("escalated") and is_dangerous:
+                                alert_info["escalated"] = True
+                                asyncio.create_task(
+                                    _escalate_and_broadcast(processor, current_event, alert_info["alert_id"])
+                                )
+
                             event_timing = {
                                 "active": True,
                                 "event": display_event,
                                 "started_at": None,
                                 "duration_ms": int(duration_sec * 1000),
                                 "confidence": result.confidence,
+                                "level": level,
                             }
 
                     frame_message = {
@@ -446,7 +524,7 @@ async def camera_websocket(websocket: WebSocket) -> None:
                             "[AI Async] Triggering async persistence for %s", result.event
                         )
                         asyncio.create_task(
-                            _persist_and_broadcast(pipeline, result.confidence)
+                            _persist_and_broadcast(processor, result.event, pipeline, result.confidence)
                         )
 
                 # Gửi thông tin phục hồi qua MQTT
@@ -564,7 +642,7 @@ async def frontend_websocket(websocket: WebSocket) -> None:
     await frontend_mgr.connect(websocket, driver_id)
 
     try:
-        is_authorized = (driver_id is not None) and (driver_id == camera_mgr.active_driver_id)
+        is_authorized = (driver_id is None) or (driver_id == camera_mgr.active_driver_id)
         await websocket.send_text(
             json.dumps(
                 {
@@ -588,7 +666,7 @@ async def frontend_websocket(websocket: WebSocket) -> None:
             cmd_type = cmd.get("type")
 
             if cmd_type == "ping":
-                is_authorized = (driver_id is not None) and (driver_id == camera_mgr.active_driver_id)
+                is_authorized = (driver_id is None) or (driver_id == camera_mgr.active_driver_id)
                 await websocket.send_text(
                     json.dumps(
                         {
@@ -609,7 +687,7 @@ async def frontend_websocket(websocket: WebSocket) -> None:
                 "set_hmirror",
                 "set_camera",
             }:
-                is_authorized = (driver_id is not None) and (driver_id == camera_mgr.active_driver_id)
+                is_authorized = (driver_id is None) or (driver_id == camera_mgr.active_driver_id)
                 if is_authorized:
                     ok = await camera_mgr.send_command(cmd)
                     await websocket.send_text(
