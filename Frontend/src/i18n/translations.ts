@@ -105,7 +105,7 @@ export const translations = {
       avatar: "Avatar Image",
       enrolled: "Enrolled",
       notEnrolled: "Not Enrolled",
-      registerWithSim: "Register with Simulator",
+      registerWithSim: "Register",
       scanInstruction: "Place driver's finger on the hardware sensor to begin scanning.",
       loadingDrivers: "Loading drivers...",
       noDrivers: "No drivers found.",

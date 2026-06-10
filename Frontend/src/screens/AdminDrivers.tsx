@@ -137,7 +137,7 @@ export function AdminDrivers () {
                     ) : (
                         <div className="flex flex-col divide-y divide-surface-container-high">
                             { filteredDrivers.map( driver => {
-                                const score = calculateSafetyScore(driver.id, allAlerts, allAppeals);
+                                const score = calculateSafetyScore(driver.id, allAlerts, allAppeals, true);
                                 const scoreInfo = getSafetyScoreLabel(score, language);
                                 return (
                                     <button
@@ -347,7 +347,7 @@ function DriverDetails ( { driver, onUpdate, allAlerts, allAppeals }: { driver: 
     const [ loadingHistory, setLoadingHistory ] = useState( false );
     const navigate = useNavigate();
 
-    const score = calculateSafetyScore(driver.id, allAlerts, allAppeals);
+    const score = calculateSafetyScore(driver.id, allAlerts, allAppeals, true);
     const scoreInfo = getSafetyScoreLabel(score, language);
 
     const [ isScanning, setIsScanning ] = useState( false );

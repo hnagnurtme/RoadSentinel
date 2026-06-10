@@ -433,7 +433,7 @@ export function AdminAppeals() {
                   {(() => {
                     const driverAlerts = (Object.values(alerts) as Alert[]).filter(a => a.driverId === selectedAppeal.driverId);
                     const driverAppeals = appeals.filter(ap => ap.driverId === selectedAppeal.driverId);
-                    const score = calculateSafetyScore(selectedAppeal.driverId, driverAlerts, driverAppeals);
+                    const score = calculateSafetyScore(selectedAppeal.driverId, driverAlerts, driverAppeals, true);
                     const scoreInfo = getSafetyScoreLabel(score, language);
                     return (
                       <div className="mt-2 flex items-center gap-2">

@@ -79,6 +79,7 @@ class CameraFrameProcessor:
         self.mqtt_alert_sent_for: str | None = None
         self.normal_start_time: float | None = None
         self.active_driver_id: str | None = None
+        self.active_alerts: dict[str, dict] = {}
 
     def _setup_evidence_pipelines(self) -> None:
         from interfaces.api.v1.websocket import create_save_alert_function
@@ -336,3 +337,4 @@ class CameraFrameProcessor:
         self.mqtt_alert_sent_for = None
         self.normal_start_time = None
         self.active_driver_id = None
+        self.active_alerts: dict[str, dict] = {}

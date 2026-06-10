@@ -1,9 +1,19 @@
 import { Alert, getAlertSeverity } from "@/types/alert";
 import { Appeal } from "@/types/appeal";
 
-export function calculateSafetyScore(driverId: string, alerts: Alert[], appeals: Appeal[]): number {
-  const driverAlerts = alerts.filter(a => a.driverId === driverId);
+export function calculateSafetyScore(driverId: string, alerts: Alert[], appeals: Appeal[], currentMonthOnly = false): number {
+  let driverAlerts = alerts.filter(a => a.driverId === driverId);
   const driverAppeals = appeals.filter(ap => ap.driverId === driverId);
+  
+  if (currentMonthOnly) {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    driverAlerts = driverAlerts.filter(a => {
+      if (!a.createdAt) return false;
+      const alertDate = new Date(a.createdAt);
+      return alertDate >= startOfMonth;
+    });
+  }
   
   // Map alertId to appeal status
   const appealStatusMap: Record<string, string> = {};

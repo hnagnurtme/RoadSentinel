@@ -268,19 +268,19 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     });
 
     // 5. Calculate Metrics & Percentage Changes ("Cùng kỳ")
-    // A. Active Assets (based on vehicles with associated devices)
-    const vehiclesWithDevice = new Set(vehicles.filter(v => v.deviceId).map(v => v.id));
-    const totalDevices = vehicles.filter(v => v.deviceId).length;
+    // A. Active Vehicles (based on all vehicles)
+    const allVehicleIds = new Set(vehicles.map(v => v.id));
+    const totalDevices = vehicles.length;
 
     const currentVehiclesSet = new Set(
       [...currentSessions.map(s => s.vehicle_id), ...currentAlerts.map(a => a.vehicleId)]
         .filter(Boolean)
-        .filter(id => vehiclesWithDevice.has(id))
+        .filter(id => allVehicleIds.has(id))
     );
     const prevVehiclesSet = new Set(
       [...prevSessions.map(s => s.vehicle_id), ...prevAlerts.map(a => a.vehicleId)]
         .filter(Boolean)
-        .filter(id => vehiclesWithDevice.has(id))
+        .filter(id => allVehicleIds.has(id))
     );
     const activeAssets = currentVehiclesSet.size;
     const activeAssetsPct = calculatePercentChange(activeAssets, prevVehiclesSet.size);
