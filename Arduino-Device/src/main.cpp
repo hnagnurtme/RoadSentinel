@@ -4,6 +4,7 @@
 #include "DFRobotDFPlayerMini.h"
 #include <WiFi.h>
 #include <esp_now.h>
+#include <esp_wifi.h>
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
@@ -25,6 +26,7 @@ struct DriverInfoMsg {
 // #define WIFI_PASSWORD "12345678"
 #define WIFI_SSID "37 Ngo Van So"
 #define WIFI_PASSWORD "987654321"
+#define ESP_NOW_CHANNEL 1
 #define NTP_SERVER "pool.ntp.org"
 #define GMT_OFFSET_SEC 7 * 3600 // Việt Nam (GMT+7)
 #define DAYLIGHT_OFFSET_SEC 0
@@ -260,10 +262,21 @@ void setup()
   // --------------------------------------------------------
   if (esp_now_init() == ESP_OK) {
     Serial.println("ESP-NOW Initialized successfully");
+    
+    // Get active channel to align peerInfo exactly
+    uint8_t primary_chan = 0;
+    if (WiFi.status() == WL_CONNECTED) {
+      primary_chan = WiFi.channel();
+    } else {
+      wifi_second_chan_t second_chan = WIFI_SECOND_CHAN_NONE;
+      esp_wifi_get_channel(&primary_chan, &second_chan);
+    }
+    Serial.printf("[ESP-NOW] Operating on Wi-Fi Channel: %d\n", primary_chan);
+
     esp_now_peer_info_t peerInfo = {};
     memset(&peerInfo, 0, sizeof(peerInfo));
     memset(peerInfo.peer_addr, 0xFF, 6); // Địa chỉ Broadcast
-    peerInfo.channel = 0;
+    peerInfo.channel = primary_chan; // Set explicit channel matching the interface channel
     peerInfo.encrypt = false;
     if (esp_now_add_peer(&peerInfo) != ESP_OK) {
       Serial.println("Failed to add broadcast peer");
@@ -319,7 +332,8 @@ void connectWiFi() {
   lcd.print("WiFi Connecting");
   
   WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  WiFi.setSleep(false); // Disable WiFi sleep to prevent missing ESP-NOW packets
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD, ESP_NOW_CHANNEL);
   int attempt = 0;
   while (WiFi.status() != WL_CONNECTED && attempt < 20) {
     delay(500);
@@ -341,6 +355,12 @@ void connectWiFi() {
     lcd.setCursor(0, 0);
     lcd.print("WiFi Failed!");
     delay(1500);
+    
+    WiFi.disconnect(); // Stop background connecting/channel hopping
+    esp_wifi_set_promiscuous(true);
+    esp_wifi_set_channel(ESP_NOW_CHANNEL, WIFI_SECOND_CHAN_NONE);
+    esp_wifi_set_promiscuous(false);
+    Serial.printf("[WiFi] Offline mode. Fixed channel to: %d\n", ESP_NOW_CHANNEL);
   }
 }
 
